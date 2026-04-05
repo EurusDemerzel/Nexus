@@ -1,0 +1,11 @@
+Flask
+Flask-SQLAlchemy
+PyMySQL
+mysql-connector-python
+pandas
+numpy
+requests
+python-dotenv
+Flask-Cors
+cryptography
+pytest
