@@ -3,15 +3,19 @@ import json
 import time
 import uuid
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, current_app, jsonify, render_template, request
 
 from app.models import ABResult, PolicyDecision, PredictionOutput, RuntimeFeature, UserHistory, db
-from app.services.llm_service import query_llm_api
+from app.services.embedding_service import embed_text
+from app.services.local_retrieval import retrieve_local
+from app.services.memory_service import MemoryService
+from app.services.mock_cloud import mock_generate
 from app.services.policy_service import choose_policy, get_latest_policy, reload_policy
 from app.services.predictor_service import predict_state_and_label
 from app.services.privacy_service import encrypt_text, mask_sensitive_text, privacy_meta
 from app.services.retrieval_service import retrieve_content
 from app.services.risk_service import evaluate_risk
+from app.services.split_decision import split_decision
 from app.services.weighting_service import update_weights
 
 bp = Blueprint('routes', __name__)
@@ -109,6 +113,14 @@ def ask_question():
         masked_question = mask_sensitive_text(question)
         meta = privacy_meta(question, masked_question)
 
+        # Initialize memory service per user and build sanitized memory context.
+        memory_service = MemoryService(user_id=user_id)
+        memory_context = memory_service.get_injected_context(question)
+
+        # Dynamic split decision (0/1/2) based on runtime load.
+        split_point = split_decision.decide()
+        current_app.logger.info(f"Split point selected: {split_point}")
+
         context = ""
         if retrieved_docs:
             context = "\n".join([f"标题: {d['title']}\n内容: {d['content']}" for d in retrieved_docs])
@@ -120,8 +132,24 @@ def ask_question():
             "回答："
         )
 
-        answer = query_llm_api(prompt)
+        if split_point == 0:
+            answer = mock_generate(masked_question)
+        elif split_point == 1:
+            _ = embed_text(masked_question)
+            answer = mock_generate(masked_question)
+        elif split_point == 2:
+            local_docs = retrieve_local(masked_question, top_k=2)
+            local_context = "\n".join([doc["content"] for doc in local_docs]) if local_docs else ""
+            prompt_with_context = f"基于以下个人笔记：\n{local_context}\n\n问题：{masked_question}\n回答："
+            answer = mock_generate(prompt_with_context)
+        else:
+            answer = mock_generate(masked_question)
+
+        if memory_context and split_point != 2:
+            answer = answer + "\n\n（根据你的记忆补充：）\n" + memory_context
+
         safe_answer = mask_sensitive_text(answer)
+        memory_service.add_history(question=question, answer=safe_answer)
 
         latency_ms = round((time.perf_counter() - started_at) * 1000.0, 2)
         query_hash = _query_hash(question)
@@ -183,6 +211,8 @@ def ask_question():
                 'privacy_meta': meta,
                 'latency_ms': latency_ms,
                 'retrieved_docs': len(retrieved_docs),
+                'split_point': split_point,
+                'memory_context': memory_context,
             }
 
         return jsonify(payload), 200
