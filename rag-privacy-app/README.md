@@ -61,16 +61,31 @@ rag-privacy-app
    ```
    python data/populate_db.py
    ```
-6. 启动应用：
+6. 启动应用（推荐仅使用这一种方式）：
 
    ```
-   python app/app.py
+   start_nexus.bat
+   ```
+
+   首次需要安装依赖时可使用：
+
+   ```
+   start_nexus.bat --install-deps
    ```
 
 ## 使用说明
 
 - 打开浏览器，访问 `http://localhost:5000`。
-- 在输入框中输入问题，点击提交，系统将返回相关回答。
+- `GET /ask` 会返回接口使用说明（不再报 405）。
+- 实际问答请使用 `POST /ask`，并发送 JSON 请求体，例如：
+
+   ```json
+   {
+      "question": "我的学习计划是什么？",
+      "user_id": 1,
+      "debug": true
+   }
+   ```
 
 ## 未来工作
 

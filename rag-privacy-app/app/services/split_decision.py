@@ -1,4 +1,7 @@
-import psutil
+try:
+    import psutil
+except Exception:
+    psutil = None
 
 class SplitDecision:
     def __init__(self):
@@ -6,6 +9,8 @@ class SplitDecision:
         self.default_split = 1
 
     def get_system_load(self):
+        if psutil is None:
+            return 50.0, 50.0
         return psutil.cpu_percent(interval=0.2), psutil.virtual_memory().percent
 
     def decide(self, force_level=None):

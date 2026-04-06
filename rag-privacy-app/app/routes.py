@@ -53,9 +53,18 @@ def _safe_json_loads(payload: str):
 def index():
     return render_template('index.html')
 
-@bp.route('/ask', methods=['POST'])
+@bp.route('/ask', methods=['GET', 'POST'])
 def ask_question():
     try:
+        if request.method == 'GET':
+            return jsonify(
+                {
+                    'message': 'Use POST /ask with JSON body: {"question":"...","user_id":1,"debug":true}',
+                    'method': 'POST',
+                    'content_type': 'application/json',
+                }
+            ), 200
+
         data = request.get_json(silent=True) or {}
         if not data:
             return jsonify({'error': 'No data provided'}), 400

@@ -9,3 +9,5 @@ python-dotenv
 Flask-Cors
 cryptography
 pytest
+sentence-transformers
+psutil

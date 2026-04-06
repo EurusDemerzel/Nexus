@@ -1,7 +1,6 @@
 import hashlib
 
 import numpy as np
-from sentence_transformers import SentenceTransformer  # type: ignore[reportMissingImports]
 
 _model = None
 _FALLBACK_DIM = 384
@@ -10,6 +9,8 @@ def get_model():
     global _model
     if _model is None:
         try:
+            from sentence_transformers import SentenceTransformer  # type: ignore[reportMissingImports]
+
             _model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2', local_files_only=True)
         except Exception:
             _model = False
