@@ -9,11 +9,11 @@ from app.models import ABResult, PolicyDecision, PredictionOutput, RuntimeFeatur
 from app.services.embedding_service import embed_text
 from app.services.local_retrieval import retrieve_local
 from app.services.memory_service import MemoryService
-from app.services.mock_cloud import mock_generate
+from app.services.llm_client import generate
 from app.services.policy_service import choose_policy, get_latest_policy, reload_policy
 from app.services.predictor_service import predict_state_and_label
 from app.services.privacy_service import encrypt_text, mask_sensitive_text, privacy_meta
-from app.services.retrieval_service import retrieve_content
+from app.services.retrieval_service import choose_source, retrieve_content
 from app.services.risk_service import evaluate_risk
 from app.services.split_decision import split_decision
 from app.services.weighting_service import update_weights
@@ -72,14 +72,19 @@ def ask_question():
         question = (data.get('question') or '').strip()
         user_id = int(data.get('user_id') or 1)
         debug = bool(data.get('debug') or False)
+        source = (data.get('source') or 'auto').strip().lower()
+        if source not in {'auto', 'patents', 'courses'}:
+            source = 'auto'
         request_id = uuid.uuid4().hex
         started_at = time.perf_counter()
 
         if not question:
             return jsonify({'error': 'Question is required'}), 400
 
+        source_used = choose_source(question, source)
+
         # First-pass retrieval for risk features.
-        seed_docs = retrieve_content(question)
+        seed_docs = retrieve_content(question, source=source_used)
         seed_avg_score = _avg_doc_score(seed_docs)
         elapsed_seed = (time.perf_counter() - started_at) * 1000.0
 
@@ -116,7 +121,9 @@ def ask_question():
         )
 
         # Second-pass retrieval with strategy policy.
-        retrieved_docs = retrieve_content(question, policy["retrieval_config"])
+        retrieved_docs = retrieve_content(question, policy["retrieval_config"], source=source_used)
+        if retrieved_docs:
+            source_used = retrieved_docs[0].get('source', source_used)
 
         # Privacy masking for prompt safety.
         masked_question = mask_sensitive_text(question)
@@ -132,7 +139,17 @@ def ask_question():
 
         context = ""
         if retrieved_docs:
-            context = "\n".join([f"标题: {d['title']}\n内容: {d['content']}" for d in retrieved_docs])
+            context_blocks = []
+            for d in retrieved_docs:
+                metadata = d.get('metadata') or {}
+                title = metadata.get('title', '')
+                content_text = d.get('content', '')
+                source_name = d.get('source', '')
+                score = d.get('score', 0)
+                context_blocks.append(
+                    f"来源: {source_name}\n标题: {title}\n相关度: {score}\n内容: {content_text}"
+                )
+            context = "\n\n".join(context_blocks)
 
         prompt = (
             "请基于以下内容库回答问题，并避免输出任何可能的个人敏感信息。\n\n"
@@ -142,23 +159,24 @@ def ask_question():
         )
 
         if split_point == 0:
-            answer = mock_generate(masked_question)
+            answer = generate(masked_question)
         elif split_point == 1:
             _ = embed_text(masked_question)
-            answer = mock_generate(masked_question)
+            answer = generate(masked_question)
         elif split_point == 2:
             local_docs = retrieve_local(masked_question, top_k=2)
             local_context = "\n".join([doc["content"] for doc in local_docs]) if local_docs else ""
             prompt_with_context = f"基于以下个人笔记：\n{local_context}\n\n问题：{masked_question}\n回答："
-            answer = mock_generate(prompt_with_context)
+            answer = generate(prompt_with_context)
         else:
-            answer = mock_generate(masked_question)
+            answer = generate(masked_question)
 
         if memory_context and split_point != 2:
             answer = answer + "\n\n（根据你的记忆补充：）\n" + memory_context
 
         safe_answer = mask_sensitive_text(answer)
-        memory_service.add_history(question=question, answer=safe_answer)
+        persisted_answer = safe_answer[:2000]
+        memory_service.add_history(question=question, answer=persisted_answer)
 
         latency_ms = round((time.perf_counter() - started_at) * 1000.0, 2)
         query_hash = _query_hash(question)
@@ -166,7 +184,7 @@ def ask_question():
         quality_proxy = min(1.0, len(safe_answer or "") / max(80.0, float(len(question) * 6)))
 
         encrypted_q = encrypt_text(question)
-        encrypted_a = encrypt_text(safe_answer)
+        encrypted_a = encrypt_text(persisted_answer)
 
         history = UserHistory(user_id=user_id, question=encrypted_q, answer=encrypted_a)
         runtime = RuntimeFeature(
@@ -212,6 +230,16 @@ def ask_question():
             'response': safe_answer,
         }
         if debug:
+            retrieved_chunks = []
+            for d in retrieved_docs:
+                retrieved_chunks.append(
+                    {
+                        'source': d.get('source'),
+                        'score': d.get('score'),
+                        'metadata': d.get('metadata'),
+                    }
+                )
+
             payload['debug'] = {
                 'risk': risk,
                 'weights': weights,
@@ -220,6 +248,8 @@ def ask_question():
                 'privacy_meta': meta,
                 'latency_ms': latency_ms,
                 'retrieved_docs': len(retrieved_docs),
+                'source_used': source_used,
+                'retrieved_chunks': retrieved_chunks,
                 'split_point': split_point,
                 'memory_context': memory_context,
             }

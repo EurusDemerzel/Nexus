@@ -99,6 +99,11 @@ def create_app():
             "created_at",
             "ALTER TABLE ab_results ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP",
         )
+        _ensure_column(
+            "material_embeddings",
+            "dimension",
+            "ALTER TABLE material_embeddings ADD COLUMN dimension INT NOT NULL DEFAULT 0",
+        )
 
     return app
 

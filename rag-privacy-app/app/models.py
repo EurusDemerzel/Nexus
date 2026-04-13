@@ -13,6 +13,54 @@ class Patent(db.Model):
     def __repr__(self):
         return f'<Patent {self.title}>'
 
+
+class Course(db.Model):
+    __tablename__ = 'courses'
+
+    id = db.Column(db.String(32), primary_key=True)
+    name = db.Column(db.String(200), nullable=False, index=True)
+    category = db.Column(db.String(50), nullable=True)
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+
+    materials = db.relationship('Material', back_populates='course', cascade='all, delete-orphan')
+
+    def __repr__(self):
+        return f'<Course {self.name}>'
+
+
+class Material(db.Model):
+    __tablename__ = 'materials'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    course_id = db.Column(db.String(32), db.ForeignKey('courses.id', ondelete='CASCADE'), nullable=True, index=True)
+    title = db.Column(db.String(500), nullable=False)
+    content = db.Column(db.Text, nullable=True)
+    file_type = db.Column(db.String(20), nullable=True)
+    file_path = db.Column(db.String(500), nullable=True)
+    source_repo = db.Column(db.String(200), nullable=True)
+    fetched_at = db.Column(db.DateTime, server_default=db.func.now())
+
+    course = db.relationship('Course', back_populates='materials')
+    embedding = db.relationship('MaterialEmbedding', back_populates='material', uselist=False, cascade='all, delete-orphan')
+
+    def __repr__(self):
+        return f'<Material {self.id}: {self.title}>'
+
+
+class MaterialEmbedding(db.Model):
+    __tablename__ = 'material_embeddings'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    material_id = db.Column(db.Integer, db.ForeignKey('materials.id', ondelete='CASCADE'), nullable=False, unique=True, index=True)
+    embedding_json = db.Column(db.Text, nullable=False)
+    dimension = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+
+    material = db.relationship('Material', back_populates='embedding')
+
+    def __repr__(self):
+        return f'<MaterialEmbedding material_id={self.material_id} dim={self.dimension}>'
+
 class UserHistory(db.Model):
     __tablename__ = 'user_history'
     
