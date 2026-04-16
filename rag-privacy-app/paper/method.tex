@@ -1,0 +1,33 @@
+\section{Methodology}
+\label{sec:method}
+
+\subsection{Overview}
+We propose \textsc{Nexus}, a dynamic split computing framework for edge-cloud collaborative RAG. As shown in Figure~\ref{fig:architecture}, \textsc{Nexus} operates in three stages: (1) \textbf{edge-side preprocessing}, (2) \textbf{dynamic split decision}, and (3) \textbf{cloud-assisted generation}.
+
+\subsection{Edge-Side Retrieval and Decision Engine}
+The edge device maintains a local vector index of frequently accessed or privacy-sensitive documents. Given a query $q$, the edge retrieves the top-$k$ documents $\mathcal{D}_k = \text{Retrieve}(q, k)$ using a lightweight bi-encoder. Unlike static split methods that fix $k$ a priori, \textsc{Nexus} employs a rule-based decision function $f(q)$ that outputs the optimal $k$ based on:
+\begin{itemize}
+    \item \textbf{Query complexity}: measured by query length and lexical uncertainty.
+    \item \textbf{Local cache hit ratio}: if similar queries have been answered recently.
+    \item \textbf{Privacy label}: documents marked as high-sensitivity never leave the edge.
+\end{itemize}
+The decision engine implements these rules as a simple lookup table, ensuring near-zero decision overhead. Future work may replace it with a learned model.
+
+\subsection{Cloud-Assisted Generation}
+If the edge-side retrieval confidence $\text{conf}(\mathcal{D}_k)$ falls below a threshold $\tau$, the query $q$ and the retrieved documents $\mathcal{D}_k$ (or their compressed representations) are sent to the cloud. The cloud then augments the query with its own larger vector index and generates the final answer using a large language model. The response is returned to the edge and cached locally.
+
+\subsection{Privacy Preservation}
+To reduce raw data leakage, we provide two optional privacy layers:
+\begin{itemize}
+    \item \textbf{Differential privacy (DP)}: Gaussian noise is added to the query embedding before transmission.
+    \item \textbf{Homomorphic encryption (HE)}: For high-sensitivity queries, retrieval and generation can be executed on encrypted data.
+\end{itemize}
+These mechanisms are configurable per query according to user privacy requirements.
+
+\subsection{Baselines}
+We compare \textsc{Nexus} against two baselines:
+\begin{itemize}
+    \item \textbf{Cloud-only}: all queries are sent directly to the cloud LLM without local retrieval.
+    \item \textbf{Static split}: a fixed number of local documents are retrieved and then forwarded for generation.
+\end{itemize}
+All systems use the same embedding model and LLM backend for fair comparison.

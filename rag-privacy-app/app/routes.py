@@ -7,7 +7,7 @@ from flask import Blueprint, current_app, jsonify, render_template, request
 
 from app.models import ABResult, PolicyDecision, PredictionOutput, RuntimeFeature, UserHistory, db
 from app.services.embedding_service import embed_text
-from app.services.local_retrieval import retrieve_local
+from app.services.local_retrieval import retrieve
 from app.services.memory_service import MemoryService
 from app.services.llm_client import generate
 from app.services.policy_service import choose_policy, get_latest_policy, reload_policy
@@ -75,6 +75,16 @@ def ask_question():
         source = (data.get('source') or 'auto').strip().lower()
         if source not in {'auto', 'patents', 'courses'}:
             source = 'auto'
+
+        force_split_point = data.get('force_split_point')
+        if force_split_point is not None:
+            try:
+                force_split_point = int(force_split_point)
+            except Exception:
+                force_split_point = None
+            if force_split_point not in {0, 1, 2}:
+                force_split_point = None
+
         request_id = uuid.uuid4().hex
         started_at = time.perf_counter()
 
@@ -84,7 +94,10 @@ def ask_question():
         source_used = choose_source(question, source)
 
         # First-pass retrieval for risk features.
-        seed_docs = retrieve_content(question, source=source_used)
+        if force_split_point == 0:
+            seed_docs = []
+        else:
+            seed_docs = retrieve_content(question, source=source_used)
         seed_avg_score = _avg_doc_score(seed_docs)
         elapsed_seed = (time.perf_counter() - started_at) * 1000.0
 
@@ -121,7 +134,10 @@ def ask_question():
         )
 
         # Second-pass retrieval with strategy policy.
-        retrieved_docs = retrieve_content(question, policy["retrieval_config"], source=source_used)
+        if force_split_point == 0:
+            retrieved_docs = []
+        else:
+            retrieved_docs = retrieve_content(question, policy["retrieval_config"], source=source_used)
         if retrieved_docs:
             source_used = retrieved_docs[0].get('source', source_used)
 
@@ -134,7 +150,7 @@ def ask_question():
         memory_context = memory_service.get_injected_context(question)
 
         # Dynamic split decision (0/1/2) based on runtime load.
-        split_point = split_decision.decide()
+        split_point = split_decision.decide(force_level=force_split_point)
         current_app.logger.info(f"Split point selected: {split_point}")
 
         context = ""
@@ -151,12 +167,7 @@ def ask_question():
                 )
             context = "\n\n".join(context_blocks)
 
-        prompt = (
-            "请基于以下内容库回答问题，并避免输出任何可能的个人敏感信息。\n\n"
-            f"内容库：\n{context}\n\n"
-            f"问题：{masked_question}\n"
-            "回答："
-        )
+        retrieved_context = context
 
         if split_point == 0:
             answer = generate(masked_question)
@@ -164,10 +175,17 @@ def ask_question():
             _ = embed_text(masked_question)
             answer = generate(masked_question)
         elif split_point == 2:
-            local_docs = retrieve_local(masked_question, top_k=2)
-            local_context = "\n".join([doc["content"] for doc in local_docs]) if local_docs else ""
-            prompt_with_context = f"基于以下个人笔记：\n{local_context}\n\n问题：{masked_question}\n回答："
-            answer = generate(prompt_with_context)
+            local_docs = retrieve(masked_question, top_k=2)
+            if local_docs:
+                local_context = "\n".join([doc.get("content", "") for doc in local_docs if doc.get("content")])
+                user_content = f"{masked_question}\n\n可用本地知识片段：\n{local_context}"
+                retrieved_context = local_context
+            else:
+                current_app.logger.info("Split=2 local retrieval returned empty context")
+                user_content = masked_question
+                retrieved_context = ""
+
+            answer = generate(user_content)
         else:
             answer = generate(masked_question)
 
@@ -250,7 +268,9 @@ def ask_question():
                 'retrieved_docs': len(retrieved_docs),
                 'source_used': source_used,
                 'retrieved_chunks': retrieved_chunks,
+                'retrieved_context': retrieved_context,
                 'split_point': split_point,
+                'force_split_point': force_split_point,
                 'memory_context': memory_context,
             }
 

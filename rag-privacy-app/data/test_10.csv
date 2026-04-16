@@ -1,0 +1,11 @@
+question,mode,latency_ms,cpu_time_sec,mem_bytes,rouge_l,retrieval_precision
+Were Scott Derrickson and Ed Wood of the same nationality?,nexus-dynamic,29718.6759,-1,-1,0.0,0.0
+What government position was held by the woman who portrayed Corliss Archer in the film Kiss and Tell?,nexus-dynamic,7270.0111,-1,-1,0.0,0.0
+"What science fantasy young adult series, told in first person, has a set of companion books narrating the stories of enslaved worlds and alien species?",nexus-dynamic,11756.8055,-1,-1,0.011364,0.5
+Are the Laleli Mosque and Esma Sultan Mansion located in the same neighborhood?,nexus-dynamic,4788.2833,-1,-1,0.0,0.0
+"The director of the romantic comedy ""Big Stone Gap"" is based in what New York city?",nexus-dynamic,7441.732,-1,-1,0.057692,0.0
+2014 S/S is the debut album of a South Korean boy group that was formed by who?,nexus-dynamic,7956.9351,-1,-1,0.05,0.5
+Who was known by his stage name Aladin and helped organizations improve their performance as a consultant?,nexus-dynamic,11824.9923,-1,-1,0.023529,0.5
+The arena where the Lewiston Maineiacs played their home games can seat how many people?,nexus-dynamic,9279.0493,-1,-1,0.01626,0.0
+"Who is older, Annie Morton or Terry Richardson?",nexus-dynamic,6326.2753,-1,-1,0.067797,1.0
+Are Local H and For Against both from the United States?,nexus-dynamic,10576.5181,-1,-1,0.0,0.0

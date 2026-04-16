@@ -11,3 +11,7 @@ cryptography
 pytest
 sentence-transformers
 psutil
+datasets
+faiss-cpu
+rouge-score
+tqdm
