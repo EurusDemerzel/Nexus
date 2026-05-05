@@ -29,7 +29,7 @@ for /f "tokens=5" %%p in ('netstat -ano ^| findstr /R /C:":5000 .*LISTENING"') d
 set "PYTHONPATH=."
 set "PYTHONUNBUFFERED=1"
 set "HF_ENDPOINT=https://hf-mirror.com"
-set "LLM_URL=http://100.92.149.102:8080/v1/chat/completions"
+set "LLM_URL=http://100.106.140.63:8080/v1/chat/completions"
 
 echo [Nexus] Starting server on http://127.0.0.1:5000
 "%VENV_PYTHON%" -c "from app.app import create_app; app=create_app(); app.run(debug=True, port=5000, use_reloader=False)"

@@ -15,3 +15,4 @@ datasets
 faiss-cpu
 rouge-score
 tqdm
+rank-bm25

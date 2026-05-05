@@ -33,12 +33,13 @@ class SplitDecision:
     """
 
     # SPLIT 标识到执行计划的映射（按你的要求硬编码）
+    # 极高负载场景回退到纯云执行（local_k=0）
     SPLIT_EXECUTION_MAP = {
-        "SPLIT_04": {"local_k": 10, "use_cloud": True},
-        "SPLIT_03": {"local_k": 8, "use_cloud": True},
-        "SPLIT_02": {"local_k": 5, "use_cloud": True},
-        "SPLIT_01": {"local_k": 2, "use_cloud": True},
-        "SPLIT_00": {"local_k": 0, "use_cloud": True},
+        "SPLIT_04": {"local_k": 15, "use_cloud": True},  # 低负载
+        "SPLIT_03": {"local_k": 12, "use_cloud": True},  # 中低负载
+        "SPLIT_02": {"local_k": 10, "use_cloud": True},  # 中负载
+        "SPLIT_01": {"local_k": 8, "use_cloud": True},   # 高负载
+        "SPLIT_00": {"local_k": 0, "use_cloud": True},   # 极高负载
     }
 
     # 专利表2（二维映射）: 每个 D_type 对应 4 个分段阈值
@@ -49,9 +50,10 @@ class SplitDecision:
     # b2 <= S < b3 -> SPLIT_01
     # S >= b3 -> SPLIT_00
     DEFAULT_SPLIT_BOUNDARIES = {
-        1: [25.0, 45.0, 65.0, 85.0],  # 高性能终端
-        2: [20.0, 40.0, 60.0, 80.0],  # 通用移动终端
-        3: [15.0, 30.0, 50.0, 70.0],  # 资源受限终端
+        # MOD: 提高 b2（70 -> 80），让更多查询落入中低负载区间
+        1: [30.0, 50.0, 80.0, 90.0],  # 高性能终端
+        2: [30.0, 50.0, 80.0, 88.0],  # 通用移动终端
+        3: [30.0, 50.0, 80.0, 85.0],  # 资源受限终端
     }
 
     def __init__(
@@ -61,7 +63,8 @@ class SplitDecision:
         mem_threshold: float = 75.0,
         weight_step: float = 0.05,
     ):
-        self.device_type = device_type if device_type in {1, 2, 3} else 2
+        # 优先使用传入设备类型，非法值回退到通用移动终端 D_type=2
+        self.device_type = int(device_type) if int(device_type) in {1, 2, 3} else 2
         self.history_window = max(3, int(history_window))
         self.mem_threshold = float(mem_threshold)
         self.weight_step = float(weight_step)
@@ -297,4 +300,5 @@ class SplitDecision:
         return self.decide(force_level=force_level)
 
 
-split_decision = SplitDecision(device_type=2)
+# MOD: 默认实例显式使用高性能设备类型
+split_decision = SplitDecision(device_type=1)

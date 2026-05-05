@@ -1,0 +1,51 @@
+# 环境配置
+.env
+.env.local
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 虚拟环境
+venv/
+.venv/
+
+# 构建产物
+dist/
+build/
+*.egg-info/
+
+# 大型生成文件
+triviaqa_kb/
+triviaqa_kb_smoke/
+*.zip
+*.tar.gz
+
+# 备份与临时
+backup_*/
+temp_*/
+
+# 测试缓存
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# 文档
+paper/
+*.md
+!README.md
+
+# 日志
+*.log
+
+# Windows 脚本 (Linux 容器不需要)
+*.bat
+*.ps1

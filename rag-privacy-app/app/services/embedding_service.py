@@ -18,6 +18,7 @@ _MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 _ROOT_DIR = Path(__file__).resolve().parents[2]
 _LOCAL_MODEL_DIR = _ROOT_DIR / "models" / "all-MiniLM-L6-v2"
 _HF_CACHE_DIR = Path.home() / ".cache" / "huggingface" / "hub"
+_FORCE_FALLBACK = os.getenv("NEXUS_EMBED_FALLBACK_ONLY", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _load_sentence_transformer():
@@ -53,6 +54,8 @@ def _load_sentence_transformer():
 
 def get_model():
     global _model
+    if _FORCE_FALLBACK:
+        return False
     if _model is None:
         _model = _load_sentence_transformer()
     return _model
@@ -63,6 +66,10 @@ def embed_text(text: str):
     if model:
         try:
             return model.encode(text)
+        except KeyboardInterrupt:
+            # Graceful degrade: avoid crashing long-running experiments when encoding is interrupted.
+            print("[embedding_service] interrupted during model.encode, fallback to hash embedding")
+            return _fallback_embed(text)
         except Exception:
             pass
     return _fallback_embed(text)
