@@ -94,10 +94,9 @@ if __name__ == "__main__":
     # ---------- 统计 ----------
     file_count = sum(len(files) for _, _, files in os.walk(OUTPUT_DIR))
     total_bytes = sum(
-        f.stat().st_size
+        os.path.getsize(os.path.join(root, f_name))
         for root, _, files in os.walk(OUTPUT_DIR)
         for f_name in files
-        for f in [os.path.join(root, f_name)]
     )
     print(f"\n{'='*60}")
     print(f"All done! {file_count} files, {total_bytes / 1024**3:.2f} GB")

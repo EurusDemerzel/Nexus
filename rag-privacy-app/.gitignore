@@ -22,6 +22,7 @@ build/
 *.tar.gz
 triviaqa_kb/
 triviaqa_kb_smoke/
+models_for_server/
 
 # Ignore temp/backup directories
 backup_*/
