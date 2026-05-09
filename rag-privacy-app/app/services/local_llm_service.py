@@ -15,7 +15,27 @@ for _imp in ("from auto_gptq import AutoGPTQForCausalLM",):
     except ImportError: pass
 
 
+# 占位基类：当 auto-gptq 版本没有 QuantizeConfig/BaseQuantizeConfig 时使用
+class _BaseQuantizeConfig:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
 def _patch_quantize_config(model_path: str):
+    """双重修复:
+    1. 修 optimum.gptq.quantizer 模块里的 QuantizeConfig 缺失
+    2. 修 quantize_config.json 文件里的类名
+    """
+    # ---- 修复 optimum 库 ----
+    try:
+        from optimum.gptq import quantizer as _oq
+        if not hasattr(_oq, "QuantizeConfig"):
+            setattr(_oq, "QuantizeConfig", _BaseQuantizeConfig)
+            print("[local_llm] Patched optimum.gptq.quantizer.QuantizeConfig")
+    except ImportError:
+        pass
+
+    # ---- 修复 quantize_config.json ----
     cfg = os.path.join(model_path, "quantize_config.json")
     if not os.path.isfile(cfg): return
     raw = Path(cfg).read_text(encoding="utf-8")
