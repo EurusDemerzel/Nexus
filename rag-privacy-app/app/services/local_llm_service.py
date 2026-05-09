@@ -23,26 +23,35 @@ _MODEL_PATH = os.getenv("LOCAL_LLM_PATH", "")
 _model = None
 _tokenizer = None
 
-# ---- 兼容 GPTQ 量化加载 ----
-# 先注册 QuantizeConfig，否则 transformers 反序列化 quantize_config.json 会失败
-try:
-    from auto_gptq.quantization import QuantizeConfig  # auto-gptq >= 0.5
-except ImportError:
-    try:
-        from auto_gptq import QuantizeConfig  # auto-gptq < 0.5
-    except ImportError:
-        QuantizeConfig = None  # type: ignore
+# ---- 兼容 GPTQ 量化加载（适配所有 auto-gptq 版本）----
+import sys as _sys
 
-if QuantizeConfig is not None:
-    import sys
-    # 确保 QuantizeConfig 在全局命名空间中可被 pickle 反序列化引用
-    if not hasattr(sys.modules.get("auto_gptq"), "QuantizeConfig"):
+# 尝试导入 QuantizeConfig（旧版 < 0.7: auto_gptq.quantization / 新版 >= 0.7: BaseQuantizeConfig）
+_gptq_cfg_cls = None
+for _pkg, _names in [
+    ("auto_gptq.quantization", ["QuantizeConfig", "BaseQuantizeConfig"]),
+    ("auto_gptq", ["QuantizeConfig", "BaseQuantizeConfig", "_BaseQuantizeConfig"]),
+]:
+    for _name in _names:
         try:
-            setattr(sys.modules["auto_gptq"], "QuantizeConfig", QuantizeConfig)
-        except Exception:
-            pass
+            _mod = __import__(_pkg, fromlist=[_name])
+            _gptq_cfg_cls = getattr(_mod, _name)
+            break
+        except (ImportError, AttributeError):
+            continue
+    if _gptq_cfg_cls is not None:
+        break
 
-# 尝试导入 AutoGPTQForCausalLM（GPTQ 专用加载器，比 AutoModel 更稳定）
+if _gptq_cfg_cls is not None:
+    # 确保模块中存在 QuantizeConfig 别名（兼容旧版 config.json 引用）
+    for _mod_name in ("auto_gptq", "auto_gptq.quantization"):
+        _m = _sys.modules.get(_mod_name)
+        if _m is not None:
+            for _alias in ("QuantizeConfig", "BaseQuantizeConfig"):
+                if not hasattr(_m, _alias):
+                    setattr(_m, _alias, _gptq_cfg_cls)
+
+# 尝试导入 AutoGPTQForCausalLM
 try:
     from auto_gptq import AutoGPTQForCausalLM as _GPTQModel
 except ImportError:
