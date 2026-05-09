@@ -62,9 +62,22 @@ def load_model(force_reload: bool = False) -> bool:
         print("[local_llm] AutoGPTQForCausalLM")
         _model = _GPTQModel.from_quantized(mp, device=_DEVICE, trust_remote_code=True)
     else:
+        # 绕过 optimum 兼容性问题：
+        # 重命名 quantize_config.json，让 transformers 按普通 FP16 模型加载
+        # 1.5B 模型用 FP16 只需 ~3GB 显存，3090 的 24GB 绰绰有余
         _patch_quantize_config(mp)
-        print("[local_llm] AutoModelForCausalLM")
+        _qt_cfg = os.path.join(mp, "quantize_config.json")
+        _qt_bak = _qt_cfg + ".bak"
+        if os.path.isfile(_qt_cfg):
+            os.rename(_qt_cfg, _qt_bak)
+            print("[local_llm] Disabled quantize_config.json (loading as FP16)")
+
+        print("[local_llm] AutoModelForCausalLM (FP16)")
         _model = AutoModelForCausalLM.from_pretrained(mp, device_map="auto", trust_remote_code=True, torch_dtype=torch.float16)
+
+        # 恢复文件（下次启动可用 GPTQ 专用加载器）
+        if os.path.isfile(_qt_bak) and not os.path.isfile(_qt_cfg):
+            os.rename(_qt_bak, _qt_cfg)
 
     print(f"[local_llm] Loaded on {_model.device}")
     return True
