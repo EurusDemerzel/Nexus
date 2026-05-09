@@ -1,190 +1,82 @@
 #!/usr/bin/env python3
-"""
-local_llm_service.py
-在 3090 GPU 上加载 GPTQ 量化模型并进行推理。
-
-依赖:
-  pip install torch transformers accelerate optimum auto-gptq
-
-环境变量:
-  LOCAL_LLM_PATH  - 模型路径（如 /home/vision/Nexus/models_for_server/Qwen1.5-7B-Chat-GPTQ）
-  LOCAL_LLM_DEVICE - 设备映射（默认 "cuda:0"）
-"""
-
+"""local_llm_service.py — GPTQ 模型加载（直达修复版）"""
 from __future__ import annotations
-
-import os
-import sys
+import json, os, sys
 from pathlib import Path
 
 _DEVICE = os.getenv("LOCAL_LLM_DEVICE", "cuda:0")
 _MODEL_PATH = os.getenv("LOCAL_LLM_PATH", "")
-
 _model = None
 _tokenizer = None
 
-# ---- 兼容 GPTQ 量化加载 ----
-# 策略: 使用 transformers.GPTQConfig 显式加载，完全绕过 auto_gptq 的类名反序列化问题
 _GPTQModel = None
-try:
-    from auto_gptq import AutoGPTQForCausalLM as _GPTQModel  # type: ignore[import-untyped]
-except ImportError:
-    pass
+for _imp in ("from auto_gptq import AutoGPTQForCausalLM",):
+    try: exec(_imp); _GPTQModel = locals().get("AutoGPTQForCausalLM"); break
+    except ImportError: pass
+
+
+def _patch_quantize_config(model_path: str):
+    cfg = os.path.join(model_path, "quantize_config.json")
+    if not os.path.isfile(cfg): return
+    raw = Path(cfg).read_text(encoding="utf-8")
+    if '"QuantizeConfig"' in raw:
+        Path(cfg).write_text(raw.replace('"QuantizeConfig"', '"BaseQuantizeConfig"'), encoding="utf-8")
+        print("[local_llm] Patched quantize_config.json")
 
 
 def load_model(force_reload: bool = False) -> bool:
-    """Load the GPTQ model and tokenizer into GPU memory."""
     global _model, _tokenizer
+    if _model is not None and not force_reload: return True
 
-    if _model is not None and not force_reload:
-        return True
+    mp = _MODEL_PATH or str(Path(__file__).resolve().parents[2] / "models_for_server" / "Qwen2.5-1.5B-Instruct-GPTQ-Int4")
+    if not os.path.isdir(mp):
+        print(f"[local_llm] Not found: {mp}"); return False
 
-    model_path = _MODEL_PATH
-    if not model_path:
-        # Fallback: check project-relative path
-        model_path = str(
-            Path(__file__).resolve().parents[2]
-            / "models_for_server"
-            / "Qwen2.5-1.5B-Instruct-GPTQ-Int4"
-        )
+    print(f"[local_llm] Loading from {mp} ...")
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    import torch
 
-    if not os.path.isdir(model_path):
-        print(f"[local_llm] Model path not found: {model_path}")
-        print("[local_llm] Set LOCAL_LLM_PATH env var or place model in models_for_server/")
-        return False
+    _tokenizer = AutoTokenizer.from_pretrained(mp, trust_remote_code=True)
 
-    print(f"[local_llm] Loading model from {model_path} ...")
-    print(f"[local_llm] Device: {_DEVICE}")
+    if _GPTQModel is not None:
+        print("[local_llm] AutoGPTQForCausalLM")
+        _model = _GPTQModel.from_quantized(mp, device=_DEVICE, trust_remote_code=True)
+    else:
+        _patch_quantize_config(mp)
+        print("[local_llm] AutoModelForCausalLM")
+        _model = AutoModelForCausalLM.from_pretrained(mp, device_map="auto", trust_remote_code=True, torch_dtype=torch.float16)
 
-    try:
-        from transformers import AutoModelForCausalLM, AutoTokenizer
-    except ImportError:
-        print("[local_llm] transformers not installed. Run: pip install transformers")
-        return False
-
-    try:
-        import torch
-
-        _tokenizer = AutoTokenizer.from_pretrained(
-            model_path,
-            trust_remote_code=True,
-        )
-
-        if _GPTQModel is not None:
-            # GPTQ 专用加载器（最稳定）
-            print("[local_llm] Using AutoGPTQForCausalLM")
-            _model = _GPTQModel.from_quantized(
-                model_path,
-                device=_DEVICE,
-                trust_remote_code=True,
-            )
-        else:
-            # 绕过 QuantizeConfig 反序列化问题：
-            # 在加载模型前，把占位类注入 auto_gptq.quantization，让 transformers 能序列化 quantize_config.json
-            print("[local_llm] Injecting QuantizeConfig placeholder for model loading ...")
-            import types as _types
-
-            class _FakeQuantizeConfig:
-                def __init__(self, **kwargs):
-                    for k, v in kwargs.items():
-                        setattr(self, k, v)
-
-            # 注入到 auto_gptq.quantization 模块（transformers 从该路径导入）
-            _ag_q = sys.modules.setdefault(
-                "auto_gptq.quantization",
-                _types.ModuleType("auto_gptq.quantization"),
-            )
-            setattr(_ag_q, "QuantizeConfig", _FakeQuantizeConfig)
-
-            # 同时注入顶层 auto_gptq（某些版本的备用路径）
-            _ag = sys.modules.setdefault(
-                "auto_gptq",
-                _types.ModuleType("auto_gptq"),
-            )
-            if not hasattr(_ag, "QuantizeConfig"):
-                setattr(_ag, "QuantizeConfig", _FakeQuantizeConfig)
-
-            print("[local_llm] Loading model with AutoModelForCausalLM ...")
-            _model = AutoModelForCausalLM.from_pretrained(
-                model_path,
-                device_map=_DEVICE,
-                trust_remote_code=True,
-                torch_dtype=torch.float16,
-            )
-
-        print(f"[local_llm] Model loaded successfully on {_model.device}")
-        return True
-    except Exception as e:
-        print(f"[local_llm] Failed to load model: {type(e).__name__}: {e}")
-        _model = None
-        _tokenizer = None
-        return False
+    print(f"[local_llm] Loaded on {_model.device}")
+    return True
 
 
 def generate(prompt: str, max_tokens: int = 128) -> str:
-    """Generate text using the local GPTQ model."""
-    global _model, _tokenizer
-
-    if _model is None:
-        if not load_model():
-            return "错误: 本地 LLM 模型未加载，请检查 LOCAL_LLM_PATH"
-
-    prompt_preview = prompt.replace("\n", " ")[:200]
-    print(f"[local_llm.generate] prompt_len={len(prompt)} preview={prompt_preview}...")
-
+    if _model is None and not load_model(): return "错误: 本地 LLM 未加载"
+    print(f"[local_llm] prompt_len={len(prompt)}")
     try:
         messages = [{"role": "user", "content": prompt}]
-        text = _tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-
+        text = _tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         import torch
         inputs = _tokenizer(text, return_tensors="pt").to(_model.device)
-
         with torch.no_grad():
-            outputs = _model.generate(
-                **inputs,
-                max_new_tokens=max_tokens,
-                temperature=0.1,
-                top_p=0.95,
-                top_k=40,
-                repetition_penalty=1.1,
-                do_sample=False,
-                pad_token_id=_tokenizer.eos_token_id,
-            )
-
-        response = _tokenizer.decode(
-            outputs[0][inputs.input_ids.shape[1]:],
-            skip_special_tokens=True,
-        ).strip()
-
-        resp_preview = response.replace("\n", " ")[:200]
-        print(f"[local_llm.generate] response_len={len(response)} preview={resp_preview}...")
-        return response
-
+            outputs = _model.generate(**inputs, max_new_tokens=max_tokens, temperature=0.1, do_sample=False, pad_token_id=_tokenizer.eos_token_id)
+        resp = _tokenizer.decode(outputs[0][inputs.input_ids.shape[1]:], skip_special_tokens=True).strip()
+        print(f"[local_llm] resp_len={len(resp)}")
+        return resp
     except Exception as e:
-        print(f"[local_llm.generate][ERROR] {type(e).__name__}: {e}")
-        return f"本地 LLM 推理失败: {e}"
+        return f"推理失败: {e}"
 
 
 def unload_model():
-    """Free GPU memory by deleting the model."""
     global _model, _tokenizer
     if _model is not None:
-        import torch
-        del _model
-        del _tokenizer
-        _model = None
-        _tokenizer = None
-        torch.cuda.empty_cache()
-        print("[local_llm] Model unloaded, GPU memory freed.")
+        import torch; del _model; del _tokenizer; _model = _tokenizer = None; torch.cuda.empty_cache()
+        print("[local_llm] Unloaded")
 
 
 if __name__ == "__main__":
-    # Quick smoke test
     if load_model():
-        resp = generate("Hello! What is the capital of France?", max_tokens=50)
-        print(f"\nSmoke test response:\n{resp}")
+        print("\n" + generate("法国的首都是哪里？", 50))
         unload_model()
     else:
         sys.exit(1)
