@@ -15,33 +15,23 @@ for _imp in ("from auto_gptq import AutoGPTQForCausalLM",):
     except ImportError: pass
 
 
-# 占位基类：当 auto-gptq 版本没有 QuantizeConfig/BaseQuantizeConfig 时使用
-class _BaseQuantizeConfig:
-    def __init__(self, **kwargs):
-        self.__dict__.update(kwargs)
-
-
 def _patch_quantize_config(model_path: str):
-    """双重修复:
-    1. 修 optimum.gptq.quantizer 模块里的 QuantizeConfig 缺失
-    2. 修 quantize_config.json 文件里的类名
-    """
-    # ---- 修复 optimum 库 ----
-    try:
-        from optimum.gptq import quantizer as _oq
-        if not hasattr(_oq, "QuantizeConfig"):
-            setattr(_oq, "QuantizeConfig", _BaseQuantizeConfig)
-            print("[local_llm] Patched optimum.gptq.quantizer.QuantizeConfig")
-    except ImportError:
-        pass
+    """彻底绕过 optimum GPTQ：删 quantize_config.json + 清 config.json 中的 quantization_config"""
+    # ---- 1. 修 config.json：移除 quantization_config 字段 ----
+    cfg_json = os.path.join(model_path, "config.json")
+    if os.path.isfile(cfg_json):
+        raw = Path(cfg_json).read_text(encoding="utf-8")
+        cfg = json.loads(raw)
+        if "quantization_config" in cfg:
+            del cfg["quantization_config"]
+            Path(cfg_json).write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+            print("[local_llm] Removed quantization_config from config.json")
 
-    # ---- 修复 quantize_config.json ----
-    cfg = os.path.join(model_path, "quantize_config.json")
-    if not os.path.isfile(cfg): return
-    raw = Path(cfg).read_text(encoding="utf-8")
-    if '"QuantizeConfig"' in raw:
-        Path(cfg).write_text(raw.replace('"QuantizeConfig"', '"BaseQuantizeConfig"'), encoding="utf-8")
-        print("[local_llm] Patched quantize_config.json")
+    # ---- 2. 重命名 quantize_config.json（禁用 GPTQ） ----
+    qt_cfg = os.path.join(model_path, "quantize_config.json")
+    if os.path.isfile(qt_cfg):
+        os.rename(qt_cfg, qt_cfg + ".bak")
+        print("[local_llm] Disabled quantize_config.json")
 
 
 def load_model(force_reload: bool = False) -> bool:
@@ -62,22 +52,9 @@ def load_model(force_reload: bool = False) -> bool:
         print("[local_llm] AutoGPTQForCausalLM")
         _model = _GPTQModel.from_quantized(mp, device=_DEVICE, trust_remote_code=True)
     else:
-        # 绕过 optimum 兼容性问题：
-        # 重命名 quantize_config.json，让 transformers 按普通 FP16 模型加载
-        # 1.5B 模型用 FP16 只需 ~3GB 显存，3090 的 24GB 绰绰有余
         _patch_quantize_config(mp)
-        _qt_cfg = os.path.join(mp, "quantize_config.json")
-        _qt_bak = _qt_cfg + ".bak"
-        if os.path.isfile(_qt_cfg):
-            os.rename(_qt_cfg, _qt_bak)
-            print("[local_llm] Disabled quantize_config.json (loading as FP16)")
-
         print("[local_llm] AutoModelForCausalLM (FP16)")
         _model = AutoModelForCausalLM.from_pretrained(mp, device_map="auto", trust_remote_code=True, torch_dtype=torch.float16)
-
-        # 恢复文件（下次启动可用 GPTQ 专用加载器）
-        if os.path.isfile(_qt_bak) and not os.path.isfile(_qt_cfg):
-            os.rename(_qt_bak, _qt_cfg)
 
     print(f"[local_llm] Loaded on {_model.device}")
     return True
