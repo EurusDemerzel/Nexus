@@ -23,39 +23,13 @@ _MODEL_PATH = os.getenv("LOCAL_LLM_PATH", "")
 _model = None
 _tokenizer = None
 
-# ---- 兼容 GPTQ 量化加载（适配所有 auto-gptq 版本）----
-import sys as _sys
-
-# 尝试导入 QuantizeConfig（旧版 < 0.7: auto_gptq.quantization / 新版 >= 0.7: BaseQuantizeConfig）
-_gptq_cfg_cls = None
-for _pkg, _names in [
-    ("auto_gptq.quantization", ["QuantizeConfig", "BaseQuantizeConfig"]),
-    ("auto_gptq", ["QuantizeConfig", "BaseQuantizeConfig", "_BaseQuantizeConfig"]),
-]:
-    for _name in _names:
-        try:
-            _mod = __import__(_pkg, fromlist=[_name])
-            _gptq_cfg_cls = getattr(_mod, _name)
-            break
-        except (ImportError, AttributeError):
-            continue
-    if _gptq_cfg_cls is not None:
-        break
-
-if _gptq_cfg_cls is not None:
-    # 确保模块中存在 QuantizeConfig 别名（兼容旧版 config.json 引用）
-    for _mod_name in ("auto_gptq", "auto_gptq.quantization"):
-        _m = _sys.modules.get(_mod_name)
-        if _m is not None:
-            for _alias in ("QuantizeConfig", "BaseQuantizeConfig"):
-                if not hasattr(_m, _alias):
-                    setattr(_m, _alias, _gptq_cfg_cls)
-
-# 尝试导入 AutoGPTQForCausalLM
+# ---- 兼容 GPTQ 量化加载 ----
+# 策略: 使用 transformers.GPTQConfig 显式加载，完全绕过 auto_gptq 的类名反序列化问题
+_GPTQModel = None
 try:
-    from auto_gptq import AutoGPTQForCausalLM as _GPTQModel
+    from auto_gptq import AutoGPTQForCausalLM as _GPTQModel  # type: ignore[import-untyped]
 except ImportError:
-    _GPTQModel = None
+    pass
 
 
 def load_model(force_reload: bool = False) -> bool:
@@ -89,25 +63,53 @@ def load_model(force_reload: bool = False) -> bool:
         return False
 
     try:
+        import torch
+
         _tokenizer = AutoTokenizer.from_pretrained(
             model_path,
             trust_remote_code=True,
         )
 
-        # GPTQ 优先使用专用加载器（自动处理 quantize_config）
         if _GPTQModel is not None:
-            print("[local_llm] Using AutoGPTQForCausalLM (GPTQ native loader)")
-            _model = _GPTQModel.from_pretrained(
+            # GPTQ 专用加载器（最稳定）
+            print("[local_llm] Using AutoGPTQForCausalLM")
+            _model = _GPTQModel.from_quantized(
                 model_path,
                 device=_DEVICE,
                 trust_remote_code=True,
             )
         else:
-            print("[local_llm] Using AutoModelForCausalLM (fallback)")
+            # 绕过 QuantizeConfig 反序列化问题：
+            # 在加载模型前，把占位类注入 auto_gptq.quantization，让 transformers 能序列化 quantize_config.json
+            print("[local_llm] Injecting QuantizeConfig placeholder for model loading ...")
+            import types as _types
+
+            class _FakeQuantizeConfig:
+                def __init__(self, **kwargs):
+                    for k, v in kwargs.items():
+                        setattr(self, k, v)
+
+            # 注入到 auto_gptq.quantization 模块（transformers 从该路径导入）
+            _ag_q = sys.modules.setdefault(
+                "auto_gptq.quantization",
+                _types.ModuleType("auto_gptq.quantization"),
+            )
+            setattr(_ag_q, "QuantizeConfig", _FakeQuantizeConfig)
+
+            # 同时注入顶层 auto_gptq（某些版本的备用路径）
+            _ag = sys.modules.setdefault(
+                "auto_gptq",
+                _types.ModuleType("auto_gptq"),
+            )
+            if not hasattr(_ag, "QuantizeConfig"):
+                setattr(_ag, "QuantizeConfig", _FakeQuantizeConfig)
+
+            print("[local_llm] Loading model with AutoModelForCausalLM ...")
             _model = AutoModelForCausalLM.from_pretrained(
                 model_path,
                 device_map=_DEVICE,
                 trust_remote_code=True,
+                torch_dtype=torch.float16,
             )
 
         print(f"[local_llm] Model loaded successfully on {_model.device}")
