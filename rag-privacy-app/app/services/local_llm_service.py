@@ -37,7 +37,7 @@ def load_model(force_reload: bool = False) -> bool:
         model_path = str(
             Path(__file__).resolve().parents[2]
             / "models_for_server"
-            / "Qwen1.5-7B-Chat-GPTQ"
+            / "Qwen2.5-1.5B-Instruct-GPTQ-Int4"
         )
 
     if not os.path.isdir(model_path):
