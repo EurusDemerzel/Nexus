@@ -23,6 +23,31 @@ _MODEL_PATH = os.getenv("LOCAL_LLM_PATH", "")
 _model = None
 _tokenizer = None
 
+# ---- 兼容 GPTQ 量化加载 ----
+# 先注册 QuantizeConfig，否则 transformers 反序列化 quantize_config.json 会失败
+try:
+    from auto_gptq.quantization import QuantizeConfig  # auto-gptq >= 0.5
+except ImportError:
+    try:
+        from auto_gptq import QuantizeConfig  # auto-gptq < 0.5
+    except ImportError:
+        QuantizeConfig = None  # type: ignore
+
+if QuantizeConfig is not None:
+    import sys
+    # 确保 QuantizeConfig 在全局命名空间中可被 pickle 反序列化引用
+    if not hasattr(sys.modules.get("auto_gptq"), "QuantizeConfig"):
+        try:
+            setattr(sys.modules["auto_gptq"], "QuantizeConfig", QuantizeConfig)
+        except Exception:
+            pass
+
+# 尝试导入 AutoGPTQForCausalLM（GPTQ 专用加载器，比 AutoModel 更稳定）
+try:
+    from auto_gptq import AutoGPTQForCausalLM as _GPTQModel
+except ImportError:
+    _GPTQModel = None
+
 
 def load_model(force_reload: bool = False) -> bool:
     """Load the GPTQ model and tokenizer into GPU memory."""
@@ -60,12 +85,21 @@ def load_model(force_reload: bool = False) -> bool:
             trust_remote_code=True,
         )
 
-        _model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            device_map=_DEVICE,
-            trust_remote_code=True,
-            # GPTQ models use the quantized config automatically
-        )
+        # GPTQ 优先使用专用加载器（自动处理 quantize_config）
+        if _GPTQModel is not None:
+            print("[local_llm] Using AutoGPTQForCausalLM (GPTQ native loader)")
+            _model = _GPTQModel.from_pretrained(
+                model_path,
+                device=_DEVICE,
+                trust_remote_code=True,
+            )
+        else:
+            print("[local_llm] Using AutoModelForCausalLM (fallback)")
+            _model = AutoModelForCausalLM.from_pretrained(
+                model_path,
+                device_map=_DEVICE,
+                trust_remote_code=True,
+            )
 
         print(f"[local_llm] Model loaded successfully on {_model.device}")
         return True
