@@ -11,6 +11,15 @@ except Exception:
     _psutil = None
     _PROC = None
 
+# NLTK BLEU（可选依赖）
+_nltk_available = True
+try:
+    from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
+    _bleu_smoother = SmoothingFunction().method1
+except ImportError:
+    _nltk_available = False
+    sentence_bleu = None  # type: ignore[assignment]
+
 
 _scorer = None
 
@@ -165,6 +174,41 @@ def calculate_rouge_l(response: str, gold_answer: Any) -> float:
         return 0.0
 
 
+# ── BLEU 计算 ──
+def compute_bleu(reference: str, hypothesis: str, ngram: int = 4) -> float:
+    """
+    基于 nltk.translate.bleu_score 计算 BLEU-1 ~ BLEU-4。
+    返回 float，如果 nltk 不可用则返回 -1。
+    """
+    if not _nltk_available:
+        return -1.0
+
+    try:
+        ref_tokens = normalize_answer(reference).split()
+        hyp_tokens = normalize_answer(hypothesis).split()
+        if not hyp_tokens or not ref_tokens:
+            return 0.0
+
+        n = max(1, min(4, int(ngram)))
+        weights = [1.0 / n] * n
+        return sentence_bleu(
+            [ref_tokens],
+            hyp_tokens,
+            weights=tuple(weights),
+            smoothing_function=_bleu_smoother,
+        )
+    except Exception as exc:
+        print(f"BLEU 计算异常: {exc}")
+        return 0.0
+
+
+def _max_bleu(refs: list[str], hyp: str, ngram: int) -> float:
+    """多参考答案下取最高 BLEU。"""
+    if not _nltk_available:
+        return -1.0
+    return max(compute_bleu(ref, hyp, ngram=ngram) for ref in refs)
+
+
 def evaluate_single_query(
     question: str,
     gold_answer: Any,
@@ -203,6 +247,8 @@ def evaluate_single_query(
         rouge_l = calculate_rouge_l(model_answer, gold_candidates)
         em = max(exact_match(model_answer, ans) for ans in gold_candidates)
         f1 = max(token_f1(model_answer, ans) for ans in gold_candidates)
+        bleu1 = _max_bleu(gold_candidates, model_answer, ngram=1)
+        bleu4 = _max_bleu(gold_candidates, model_answer, ngram=4)
         best_answer_for_log = max(gold_candidates, key=lambda ans: token_f1(model_answer, ans))
 
         # NEW: 依据题型提示优先指标
@@ -231,6 +277,8 @@ def evaluate_single_query(
             # NEW: 新增指标
             "exact_match": round(em, 6),
             "token_f1": round(f1, 6),
+            "bleu_1": round(bleu1, 6) if bleu1 >= 0 else -1,
+            "bleu_4": round(bleu4, 6) if bleu4 >= 0 else -1,
             "retrieval_precision": round(retrieval_precision, 6),
         }
         print(

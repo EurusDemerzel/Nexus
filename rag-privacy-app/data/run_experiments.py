@@ -118,6 +118,8 @@ def main() -> None:
         "rouge_l",
         "exact_match",
         "token_f1",
+        "bleu_1",
+        "bleu_4",
         "retrieval_precision",
     ]
 
@@ -167,6 +169,8 @@ def main() -> None:
                         "rouge_l": -1,
                         "exact_match": -1,
                         "token_f1": -1,
+                        "bleu_1": -1,
+                        "bleu_4": -1,
                         "retrieval_precision": -1,
                     }
                 )
