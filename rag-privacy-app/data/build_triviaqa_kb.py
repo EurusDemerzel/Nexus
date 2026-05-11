@@ -166,11 +166,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Build TriviaQA FAISS KB from unfiltered entity_pages")
     parser.add_argument("--max-docs", type=int, default=5000, help="Maximum number of documents")
     parser.add_argument("--batch-size", type=int, default=64, help="Embedding batch size")
-    parser.add_argument("--output-dir", type=str, default="./triviaqa_kb", help="Output KB directory")
+    parser.add_argument("--output-dir", type=str, default=None, help="Output KB directory. 默认 = 项目根/triviaqa_kb")
     args = parser.parse_args()
 
     max_docs = max(1, int(args.max_docs))
-    output_dir = Path(args.output_dir).resolve()
+    output_dir = Path(args.output_dir).resolve() if args.output_dir else (Path(__file__).resolve().parents[1] / "triviaqa_kb")
     build_triviaqa_kb(max_docs=max_docs, output_dir=output_dir, batch_size=args.batch_size)
 
 

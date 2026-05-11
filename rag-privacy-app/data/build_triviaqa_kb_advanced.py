@@ -227,11 +227,22 @@ def main() -> None:
     parser.add_argument("--chunk-size", type=int, default=512)
     parser.add_argument("--overlap", type=int, default=64)
     parser.add_argument("--batch-size", type=int, default=64)
-    parser.add_argument("--output-dir", type=str, default="./triviaqa_kb")
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help="输出目录. 默认 = 项目根/triviaqa_kb",
+    )
     args = parser.parse_args()
 
+    # 默认输出到项目根目录下的 triviaqa_kb/
+    if args.output_dir is None:
+        output_dir = Path(__file__).resolve().parents[1] / "triviaqa_kb"
+    else:
+        output_dir = Path(args.output_dir).resolve()
+
     build_kb(
-        output_dir=Path(args.output_dir).resolve(),
+        output_dir=output_dir,
         max_docs=max(1, int(args.max_docs)),
         chunk_size=max(64, int(args.chunk_size)),
         overlap=max(0, int(args.overlap)),
