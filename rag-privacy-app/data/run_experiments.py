@@ -121,6 +121,8 @@ def main() -> None:
         "bleu_1",
         "bleu_4",
         "retrieval_precision",
+        "privacy_mode",
+        "privacy_overhead_ms",
     ]
 
     success_count = 0
@@ -172,6 +174,8 @@ def main() -> None:
                         "bleu_1": -1,
                         "bleu_4": -1,
                         "retrieval_precision": -1,
+                        "privacy_mode": "error",
+                        "privacy_overhead_ms": -1,
                     }
                 )
                 csvfile.flush()

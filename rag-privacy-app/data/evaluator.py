@@ -280,6 +280,9 @@ def evaluate_single_query(
             "bleu_1": round(bleu1, 6) if bleu1 >= 0 else -1,
             "bleu_4": round(bleu4, 6) if bleu4 >= 0 else -1,
             "retrieval_precision": round(retrieval_precision, 6),
+            # ── 隐私开销 ──
+            "privacy_mode": getattr(getattr(nexus_system, "privacy_layer", None), "mode", "unknown"),
+            "privacy_overhead_ms": round(getattr(getattr(nexus_system, "privacy_layer", None), "last_overhead", type("x", (), {"total_ms": -1})()).total_ms, 4),
         }
         print(
             f"→ 结果: ROUGE-L={result['rouge_l']}, EM={result['exact_match']}, "
