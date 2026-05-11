@@ -68,9 +68,13 @@ class NexusSystem:
     # MOD: 统一 Qwen Prompt 模板，static-split 与 nexus-dynamic 共用
     def _build_qwen_prompt(self, question: str, context_text: str) -> str:
         if not context_text or not context_text.strip():
-            return f"Question: {question}\nAnswer:"
+            return f"Question: {question}\n\nAnswer (ONLY the answer, no explanation):"
 
-        return f"Context:\n{context_text}\n\nQuestion: {question}\nAnswer:"
+        return (
+            f"Context:\n{context_text}\n\n"
+            f"Question: {question}\n\n"
+            f"Answer (ONLY the answer, one short sentence, no explanation):"
+        )
 
     # MOD: 统一 prompt 构建入口
     def _build_prompt(self, question: str, docs: list[RetrievedDoc]) -> str:

@@ -15,7 +15,7 @@ _REMOTE_URL = os.getenv("LLM_URL", "http://100.106.140.63:8080/v1/chat/completio
 _GGUF_URL = os.getenv("GGUF_URL", "http://localhost:8080/generate")
 
 
-def generate(prompt: str, max_tokens: int = 128) -> str:
+def generate(prompt: str, max_tokens: int = 96) -> str:
     """根据 LLM_CLIENT_MODE 选择对应的后端生成回答。"""
     safe_prompt = prompt if isinstance(prompt, str) else str(prompt)
     print(f"[llm_client] mode={_CLIENT_MODE} prompt_len={len(safe_prompt)}")
@@ -79,17 +79,26 @@ def _generate_gguf(prompt: str, max_tokens: int) -> str:
 
     print(f"[llm_client.gguf] url={_GGUF_URL}")
 
+    # 在 prompt 前添加 system 指令，强制只输出答案
+    _SYSTEM_INSTRUCTION = (
+        "You are a concise answering engine. "
+        "Output ONLY the final answer in one short sentence. "
+        "Do NOT explain, do NOT reason, do NOT repeat the context.\n\n"
+    )
+    full_prompt = _SYSTEM_INSTRUCTION + prompt
+
     try:
         resp = requests.post(
             _GGUF_URL,
             json={
-                "prompt": prompt,
+                "prompt": full_prompt,
                 "max_tokens": max_tokens,
                 "temperature": 0.1,
                 "top_p": 0.95,
                 "top_k": 40,
                 "repeat_penalty": 1.1,
                 "n_predict": max_tokens,
+                "stop": ["\n\n", "Context:", "[1] title="],
             },
             timeout=120,
         )
@@ -126,13 +135,17 @@ def _generate_remote(prompt: str, max_tokens: int) -> str:
         resp = requests.post(
             _REMOTE_URL,
             json={
-                "messages": [{"role": "user", "content": prompt}],
+                "messages": [
+                    {"role": "system", "content": "Answer the question with ONLY the answer. One short sentence. No explanation."},
+                    {"role": "user", "content": prompt},
+                ],
                 "max_tokens": max_tokens,
                 "temperature": 0.1,
                 "do_sample": False,
                 "top_p": 0.95,
                 "top_k": 40,
                 "repetition_penalty": 1.1,
+                "stop": ["\n\n", "Context:"],
             },
             timeout=120,
         )
