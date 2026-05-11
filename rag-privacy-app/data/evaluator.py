@@ -4,6 +4,13 @@ import time
 from collections import Counter
 from typing import Any
 
+try:
+    import psutil as _psutil  # type: ignore[import-untyped]
+    _PROC = _psutil.Process()
+except Exception:
+    _psutil = None
+    _PROC = None
+
 
 _scorer = None
 
@@ -173,9 +180,18 @@ def evaluate_single_query(
         print(f"\n--- 问题 [{mode}]: {question[:60]}... ---")
 
         start_time = time.perf_counter()
+        cpu_before = _PROC.cpu_times().user if _PROC else 0.0
+        mem_before = _PROC.memory_info().rss if _PROC else 0
+
         response, retrieved_docs = nexus_system.ask(question, mode)
+
         end_time = time.perf_counter()
+        cpu_after = _PROC.cpu_times().user if _PROC else 0.0
+        mem_after = _PROC.memory_info().rss if _PROC else 0
+
         latency_ms = (end_time - start_time) * 1000.0
+        cpu_time_sec = round(cpu_after - cpu_before, 4)
+        mem_bytes = max(0, mem_after - mem_before)
 
         model_answer = (response or "").strip()
         gold_candidates = as_gold_answers(gold_answer)
@@ -209,8 +225,8 @@ def evaluate_single_query(
             "model_answer": model_answer,
             "mode": mode,
             "latency_ms": round(latency_ms, 4),
-            "cpu_time_sec": -1,
-            "mem_bytes": -1,
+            "cpu_time_sec": cpu_time_sec if _PROC else -1,
+            "mem_bytes": mem_bytes if _PROC else -1,
             "rouge_l": round(rouge_l, 6),
             # NEW: 新增指标
             "exact_match": round(em, 6),
