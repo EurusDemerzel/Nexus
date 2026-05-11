@@ -180,8 +180,23 @@ def build_kb(
         raise SystemExit("No chunks collected from TriviaQA entity_pages")
 
     print(f"Collected chunks: {len(docs)}")
-    print("[3/5] Loading embedding model sentence-transformers/all-MiniLM-L6-v2 ...")
-    model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+
+    # 嵌入模型路径：命令行 > 本地 models_for_server > HF 在线
+    local_embed = (Path(__file__).resolve().parents[1] / "models_for_server" / "all-MiniLM-L6-v2")
+    embed_path = os.getenv("EMBEDDING_MODEL_PATH", "")
+    if not embed_path and local_embed.exists():
+        embed_path = str(local_embed)
+        print(f"[3/5] Loading embedding model from local: {embed_path}")
+    elif embed_path:
+        print(f"[3/5] Loading embedding model from EMBEDDING_MODEL_PATH: {embed_path}")
+    else:
+        embed_path = "sentence-transformers/all-MiniLM-L6-v2"
+        print(f"[3/5] Loading embedding model from HF: {embed_path}")
+
+    model = SentenceTransformer(
+        embed_path,
+        local_files_only=os.getenv("HF_DATASETS_OFFLINE", "") == "1" or None,
+    )
 
     print("[4/5] Encoding chunks ...")
     emb = model.encode(
