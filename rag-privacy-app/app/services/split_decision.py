@@ -220,16 +220,16 @@ class SplitDecision:
         metrics["weight_cpu"] = round(self.weight_cpu, 4)
         metrics["weight_mem"] = round(self.weight_mem, 4)
 
-        # ── 阈值决策（默认）──
-        if score_s > 35:
-            cfg = {"local_k": 20, "use_cloud": False}
-            split_id = "SCORE_HIGH_K20"
+        # ── 阈值决策：高负载少检索、低负载多检索（LLM 始终在云端）──
+        if score_s > 45:
+            cfg = {"local_k": 4, "use_cloud": True}   # 高负载：端侧只检索4条
+            split_id = "SCORE_HIGH_K4"
         elif score_s > 25:
-            cfg = {"local_k": 15, "use_cloud": True}
-            split_id = "SCORE_MID_K15"
+            cfg = {"local_k": 8, "use_cloud": True}   # 中负载：端侧检索8条
+            split_id = "SCORE_MID_K8"
         else:
-            cfg = {"local_k": 8, "use_cloud": True}
-            split_id = "SCORE_LOW_K8"
+            cfg = {"local_k": 15, "use_cloud": True}  # 低负载：端侧多检索15条
+            split_id = "SCORE_LOW_K15"
         return DecisionPlan(
             split_id=split_id,
             local_k=int(cfg["local_k"]),
