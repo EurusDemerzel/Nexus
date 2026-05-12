@@ -134,6 +134,7 @@ def build_kb(
     chunk_size: int,
     overlap: int,
     batch_size: int,
+    **kwargs,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -183,17 +184,14 @@ def build_kb(
     print(f"Collected chunks: {len(docs)}")
 
     # 嵌入模型路径：命令行 > 本地 models_for_server > HF 在线
-    local_embed = (Path(__file__).resolve().parents[1] / "models_for_server" / "all-MiniLM-L6-v2")
-    embed_path = os.getenv("EMBEDDING_MODEL_PATH", "")
-    if not embed_path and local_embed.exists():
-        embed_path = str(local_embed)
-        print(f"[3/5] Loading embedding model from local: {embed_path}")
-    elif embed_path:
-        print(f"[3/5] Loading embedding model from EMBEDDING_MODEL_PATH: {embed_path}")
-    else:
+    _build_default_embed = str(Path(__file__).resolve().parents[1] / "models_for_server" / "all-MiniLM-L6-v2")
+    embed_path = kwargs.get("embedding_model") or os.getenv("EMBEDDING_MODEL_PATH", "")
+    if not embed_path and os.path.isdir(_build_default_embed):
+        embed_path = _build_default_embed
+    elif not embed_path:
         embed_path = "sentence-transformers/all-MiniLM-L6-v2"
-        print(f"[3/5] Loading embedding model from HF: {embed_path}")
 
+    print(f"[3/5] Loading embedding model: {embed_path}")
     model = SentenceTransformer(
         embed_path,
         local_files_only=os.getenv("HF_DATASETS_OFFLINE", "") == "1" or None,
@@ -249,6 +247,12 @@ def main() -> None:
         default=None,
         help="输出目录. 默认 = 项目根/triviaqa_kb",
     )
+    parser.add_argument(
+        "--embedding-model",
+        type=str,
+        default=None,
+        help="嵌入模型路径或 HF 名称. 默认 = 自动探测 (models_for_server/all-MiniLM-L6-v2)",
+    )
     args = parser.parse_args()
 
     # 默认输出到项目根目录下的 triviaqa_kb/
@@ -263,6 +267,7 @@ def main() -> None:
         chunk_size=max(64, int(args.chunk_size)),
         overlap=max(0, int(args.overlap)),
         batch_size=max(1, int(args.batch_size)),
+        embedding_model=args.embedding_model,
     )
 
 
