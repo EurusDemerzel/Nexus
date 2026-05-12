@@ -3,6 +3,8 @@ import argparse
 import csv
 import json
 import os
+import random
+import subprocess
 import traceback
 from pathlib import Path
 
@@ -10,6 +12,25 @@ from tqdm import tqdm
 
 from evaluator import evaluate_single_query
 from nexus_system import NexusSystem
+
+
+# ── 随机 RTT 支持 ──
+_RANDOM_RTT = os.getenv("RANDOM_RTT", "").strip() == "1"
+
+
+def _set_random_rtt():
+    """在 lo 接口上设置随机延迟 (80-300ms)，模拟真实网络波动。"""
+    if not _RANDOM_RTT:
+        return
+    delay_ms = random.randint(80, 300)
+    cmd = ["sudo", "tc", "qdisc", "replace", "dev", "lo", "root", "netem", "delay", f"{delay_ms}ms"]
+    try:
+        subprocess.run(cmd, capture_output=True, text=True, timeout=5, check=True)
+        print(f"🌐 RTT: {delay_ms} ms on lo")
+    except subprocess.CalledProcessError as e:
+        print(f"⚠️  RTT 设置失败 (可能需要 sudo): {e.stderr.strip() if e.stderr else e}")
+    except FileNotFoundError:
+        print("⚠️  tc 命令不存在，跳过 RTT 设置")
 
 
 def load_qa_questions(json_path: str, limit: int | None = None) -> list[dict]:
@@ -142,6 +163,7 @@ def main() -> None:
             gold_facts = item.get("supporting_facts", [])
 
             try:
+                _set_random_rtt()
                 metrics = evaluate_single_query(
                     question=question,
                     gold_answer=gold_answer,
