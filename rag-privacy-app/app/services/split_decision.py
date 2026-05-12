@@ -221,7 +221,7 @@ class SplitDecision:
         metrics["weight_mem"] = round(self.weight_mem, 4)
 
         # ── 阈值决策（默认）──
-        if score_s > 40:
+        if score_s > 35:
             cfg = {"local_k": 20, "use_cloud": False}
             split_id = "SCORE_HIGH_K20"
         elif score_s > 25:
