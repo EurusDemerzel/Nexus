@@ -14,7 +14,6 @@ except Exception:
 
 _model = None
 _FALLBACK_DIM = 384
-_MODEL_NAME = os.getenv("EMBEDDING_MODEL_PATH", "sentence-transformers/all-MiniLM-L6-v2")
 _ROOT_DIR = Path(__file__).resolve().parents[2]
 _LOCAL_MODEL_DIRS = [
     _ROOT_DIR / "models_for_server" / "BAAI" / "bge-base-en-v1.5",
@@ -25,42 +24,36 @@ _HF_CACHE_DIR = Path.home() / ".cache" / "huggingface" / "hub"
 _FORCE_FALLBACK = os.getenv("NEXUS_EMBED_FALLBACK_ONLY", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _pick_best_model_dir() -> str:
+    """根据 FAISS 索引维度或可用的本地模型，自动选择嵌入模型。"""
+    # 优先使用显式环境变量
+    explicit = os.getenv("EMBEDDING_MODEL_PATH", "").strip()
+    if explicit:
+        return explicit
+
+    # 按优先级尝试：BGE > MiniLM
+    for _dir in _LOCAL_MODEL_DIRS:
+        if _dir.exists():
+            return str(_dir)
+
+    return "sentence-transformers/all-MiniLM-L6-v2"
+
+
+_MODEL_NAME = _pick_best_model_dir()
+
+
 def _load_sentence_transformer():
     if SentenceTransformer is None:
         return False
 
-    # 1) Prefer explicit EMBEDDING_MODEL_PATH env var.
-    explicit = os.getenv("EMBEDDING_MODEL_PATH", "").strip()
-    if explicit:
-        try:
-            return SentenceTransformer(str(explicit))
-        except Exception:
-            pass
-
-    # 2) Prefer any existing local project model folder.
-    for _dir in _LOCAL_MODEL_DIRS:
-        if _dir.exists():
-            try:
-                return SentenceTransformer(str(_dir))
-            except Exception:
-                pass
-
-    # 3) Local HF cache (offline mode).
     try:
         return SentenceTransformer(
             _MODEL_NAME,
             cache_folder=str(_HF_CACHE_DIR),
-            local_files_only=True,
+            local_files_only=os.getenv("HF_DATASETS_OFFLINE", "") == "1" or None,
         )
     except Exception:
-        pass
-
-    # 4) Fallback to mirror-based download.
-    try:
-        return SentenceTransformer(
-            _MODEL_NAME,
-            cache_folder=str(_HF_CACHE_DIR),
-        )
+        return False
     except Exception:
         return False
 
