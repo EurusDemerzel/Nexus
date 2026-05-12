@@ -220,16 +220,20 @@ class SplitDecision:
         metrics["weight_cpu"] = round(self.weight_cpu, 4)
         metrics["weight_mem"] = round(self.weight_mem, 4)
 
-        # ── 阈值决策：高负载少检索、低负载多检索（LLM 始终在云端）──
-        if score_s > 45:
-            cfg = {"local_k": 4, "use_cloud": True}   # 高负载：端侧只检索4条
-            split_id = "SCORE_HIGH_K4"
-        elif score_s > 25:
-            cfg = {"local_k": 8, "use_cloud": True}   # 中负载：端侧检索8条
-            split_id = "SCORE_MID_K8"
+        # ── 单阈值决策（可通过环境变量覆盖）──
+        # NEXUS_THRESHOLD: 中/低分界，默认30
+        # NEXUS_HIGH_K: 高负载 local_k，默认4
+        # NEXUS_LOW_K: 低负载 local_k，默认12
+        _threshold = int(os.getenv("NEXUS_THRESHOLD", "30"))
+        _high_k = int(os.getenv("NEXUS_HIGH_K", "4"))
+        _low_k = int(os.getenv("NEXUS_LOW_K", "12"))
+
+        if score_s > _threshold:
+            cfg = {"local_k": _high_k, "use_cloud": True}
+            split_id = "SCORE_HIGH"
         else:
-            cfg = {"local_k": 15, "use_cloud": True}  # 低负载：端侧多检索15条
-            split_id = "SCORE_LOW_K15"
+            cfg = {"local_k": _low_k, "use_cloud": True}
+            split_id = "SCORE_LOW"
         return DecisionPlan(
             split_id=split_id,
             local_k=int(cfg["local_k"]),
