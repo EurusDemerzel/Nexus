@@ -227,7 +227,7 @@ def evaluate_single_query(
         cpu_before = _PROC.cpu_times().user if _PROC else 0.0
         mem_before = _PROC.memory_info().rss if _PROC else 0
 
-        response, retrieved_docs = nexus_system.ask(question, mode)
+        response, retrieved_docs, debug_meta = nexus_system.ask(question, mode)
 
         end_time = time.perf_counter()
         cpu_after = _PROC.cpu_times().user if _PROC else 0.0
@@ -283,6 +283,10 @@ def evaluate_single_query(
             # ── 隐私开销 ──
             "privacy_mode": getattr(getattr(nexus_system, "privacy_layer", None), "mode", "unknown"),
             "privacy_overhead_ms": round(getattr(getattr(nexus_system, "privacy_layer", None), "last_overhead", type("x", (), {"total_ms": -1})()).total_ms, 4),
+            # ── 动态决策调试字段 ──
+            "local_k": debug_meta.get("local_k", -1),
+            "use_cloud": int(debug_meta.get("use_cloud", False)),
+            "load_score": debug_meta.get("load_score", -1.0),
         }
         print(
             f"→ 结果: ROUGE-L={result['rouge_l']}, EM={result['exact_match']}, "

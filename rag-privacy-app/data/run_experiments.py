@@ -144,6 +144,9 @@ def main() -> None:
         "retrieval_precision",
         "privacy_mode",
         "privacy_overhead_ms",
+        "local_k",
+        "use_cloud",
+        "load_score",
     ]
 
     success_count = 0
@@ -198,6 +201,9 @@ def main() -> None:
                         "retrieval_precision": -1,
                         "privacy_mode": "error",
                         "privacy_overhead_ms": -1,
+                        "local_k": -1,
+                        "use_cloud": -1,
+                        "load_score": -1,
                     }
                 )
                 csvfile.flush()

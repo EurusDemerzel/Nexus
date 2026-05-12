@@ -257,7 +257,9 @@ class NexusSystem:
                 total_ms=timing["total_ms"],
                 energy_delta=0.0,
             )
-            return response, retrieved_docs
+            return response, retrieved_docs, {
+                "local_k": 0, "use_cloud": True, "load_score": 0.0,
+            }
 
         if mode == "static-split":
             response, local_docs, timing = self._static_split_answer(question)
@@ -273,7 +275,9 @@ class NexusSystem:
                 total_ms=timing["total_ms"],
                 energy_delta=energy_delta,
             )
-            return response, local_docs
+            return response, local_docs, {
+                "local_k": self.static_k, "use_cloud": True, "load_score": 0.0,
+            }
 
         if mode == "nexus-dynamic":
             # 关键改造：严格使用专利决策引擎，不再使用问题长度启发式
@@ -329,6 +333,10 @@ class NexusSystem:
                 total_ms=timing["total_ms"],
                 energy_delta=energy_delta,
             )
-            return response, local_docs
+            return response, local_docs, {
+                "local_k": effective_local_k,
+                "use_cloud": plan.use_cloud,
+                "load_score": round(plan.score_s, 4),
+            }
 
         raise ValueError(f"Unknown mode: {mode}")
