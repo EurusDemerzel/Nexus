@@ -220,6 +220,25 @@ class SplitDecision:
         metrics["weight_cpu"] = round(self.weight_cpu, 4)
         metrics["weight_mem"] = round(self.weight_mem, 4)
 
+        # ── 实验模式：直接按 score_s 阈值决策 ──
+        if os.getenv("NEXUS_SCORE_DECISION", "").strip() == "1":
+            if score_s > 40:
+                cfg = {"local_k": 20, "use_cloud": False}
+                split_id = "EXP_HIGH_SCORE_K20"
+            elif score_s > 25:
+                cfg = {"local_k": 15, "use_cloud": True}
+                split_id = "EXP_MID_SCORE_K15"
+            else:
+                cfg = {"local_k": 8, "use_cloud": True}
+                split_id = "EXP_LOW_SCORE_K8"
+            return DecisionPlan(
+                split_id=split_id,
+                local_k=int(cfg["local_k"]),
+                use_cloud=bool(cfg["use_cloud"]),
+                score_s=float(score_s),
+                metrics=metrics,
+            )
+
         split_id = forced_split_id if forced_split_id else self.lookup_split_id(score_s, self.device_type)
         return self.split_to_plan(split_id=split_id, score_s=score_s, metrics=metrics)
 
