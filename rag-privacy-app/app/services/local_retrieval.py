@@ -20,6 +20,44 @@ except Exception:
 
 from app.services.embedding_service import embed_text
 
+# ── Cross-encoder Reranker (可选，USE_RERANKER=1 启用) ──
+_RERANKER_MODEL = None
+_RERANKER_NAME = os.getenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+
+
+def _load_reranker():
+    global _RERANKER_MODEL
+    if _RERANKER_MODEL is not None:
+        return _RERANKER_MODEL
+    try:
+        from sentence_transformers import CrossEncoder
+        _RERANKER_MODEL = CrossEncoder(_RERANKER_NAME, automodel_args={"local_files_only": True})
+        print(f"[local_retrieval.reranker] Loaded {_RERANKER_NAME}")
+    except Exception:
+        try:
+            from sentence_transformers import CrossEncoder
+            _RERANKER_MODEL = CrossEncoder(_RERANKER_NAME)
+        except Exception as e:
+            print(f"[local_retrieval.reranker] Failed to load: {e}")
+    return _RERANKER_MODEL
+
+
+def _rerank_cross_encoder(query: str, docs: list[dict], top_k: int) -> tuple[list[dict], float]:
+    """Cross-encoder reranking, returns (reranked_docs, overhead_ms)."""
+    import time as _time
+    t0 = _time.perf_counter()
+    model = _load_reranker()
+    if model is None or len(docs) <= 1:
+        return docs, 0.0
+
+    pairs = [(query, doc["content"][:512]) for doc in docs]
+    scores = model.predict(pairs, show_progress_bar=False)
+    for doc, score in zip(docs, scores):
+        doc["ce_score"] = float(score)
+    docs.sort(key=lambda x: x.get("ce_score", 0.0), reverse=True)
+    overhead = round((_time.perf_counter() - t0) * 1000.0, 4)
+    return docs[:max(1, top_k)], overhead
+
 
 DEFAULT_LOCAL_NOTES = [
     {"id": 1, "content": "我的机器学习学习计划：每周完成两节课程并复盘实验结果。"},
@@ -116,6 +154,18 @@ def retrieve_from_faiss(query: str, top_k: int = 8) -> list[dict]:
         )
 
     print(f"[local_retrieval.retrieve_from_faiss] hits={len(results)}")
+
+    # ── 可选 Cross-Encoder Rerank ──
+    if results and os.getenv("USE_RERANKER", "").strip() == "1":
+        rerank_k = int(os.getenv("RERANK_K", "4"))
+        results, rerank_ms = _rerank_cross_encoder(query, results, top_k=rerank_k)
+        if rerank_ms > 0:
+            print(f"[local_retrieval.retrieve_from_faiss] reranked {len(results)} docs in {rerank_ms:.1f}ms")
+            for r in results[:3]:
+                ce = r.get("ce_score", 0.0)
+                title = (r.get("metadata") or {}).get("title", "N/A")
+                print(f"  [reranked] title={title} ce_score={ce:.4f}")
+
     return results
 
 

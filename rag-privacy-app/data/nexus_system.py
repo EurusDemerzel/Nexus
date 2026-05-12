@@ -32,8 +32,9 @@ class NexusSystem:
         privacy_mode: str | None = None,
         privacy_epsilon: float = 0.1,
     ):
-        # MOD: static-split 默认使用 top-8，降低静态模式延迟
-        self.static_k = static_k
+        # MOD: static-split 默认使用 top-8；可通过 NEXUS_STATIC_K 覆盖
+        env_k = os.getenv("NEXUS_STATIC_K", "").strip()
+        self.static_k = int(env_k) if env_k.isdigit() else static_k
         self.dynamic_conf_threshold = dynamic_conf_threshold
         self.decision_engine = SplitDecision(device_type=device_type)
         # MOD: 默认关闭隐私层，避免实验阶段意外噪声影响
