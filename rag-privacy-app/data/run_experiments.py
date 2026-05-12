@@ -84,7 +84,7 @@ def main() -> None:
     )
     parser.add_argument("--limit", type=int, default=200, help="测试问题数量")
     parser.add_argument("--output", type=str, default="./data/experiment_results.csv", help="输出 CSV 路径")
-    parser.add_argument("--data", type=str, default="./data/hotpotqa_dev.json", help="问答 JSON 路径 (HotpotQA/NQ)")
+    parser.add_argument("--data", type=str, default="./data/triviaqa_dev.json", help="问答 JSON 路径")
     parser.add_argument(
         "--retriever",
         type=str,

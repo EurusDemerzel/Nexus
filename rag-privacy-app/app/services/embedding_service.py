@@ -16,6 +16,7 @@ _model = None
 _FALLBACK_DIM = 384
 _ROOT_DIR = Path(__file__).resolve().parents[2]
 _LOCAL_MODEL_DIRS = [
+    _ROOT_DIR / "models_for_server" / "bge-base-en-v1.5",
     _ROOT_DIR / "models_for_server" / "BAAI" / "bge-base-en-v1.5",
     _ROOT_DIR / "models_for_server" / "all-MiniLM-L6-v2",
     _ROOT_DIR / "models" / "all-MiniLM-L6-v2",
