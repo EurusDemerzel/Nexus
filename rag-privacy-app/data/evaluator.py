@@ -1,7 +1,9 @@
+import os
 import re
 import string
 import time
 from collections import Counter
+from pathlib import Path
 from typing import Any
 
 try:
@@ -20,14 +22,68 @@ except ImportError:
     _nltk_available = False
     sentence_bleu = None  # type: ignore[assignment]
 
-# BERTScore（可选依赖，pip install bert-score）
-_bertscore_available = True
-try:
-    from bert_score import BERTScorer as _BERTScorer
-    _bertscorer = _BERTScorer(lang="en", model_type="microsoft/deberta-xlarge-mnli", device=None, verbose=False)
-except ImportError:
-    _bertscore_available = False
-    _bertscorer = None
+# ── 本地 RoBERTa 语义相似度（完全离线）──
+_ROBERTA_MODEL = None
+_ROBERTA_TOKENIZER = None
+_ROBERTA_PATH = os.getenv(
+    "ROBERTA_MODEL_PATH",
+    str(Path(__file__).resolve().parents[1] / "models-roberta-large"),
+)
+
+
+def _load_roberta():
+    global _ROBERTA_MODEL, _ROBERTA_TOKENIZER
+    if _ROBERTA_MODEL is not None:
+        return True
+    model_dir = Path(_ROBERTA_PATH)
+    if not model_dir.is_dir():
+        print(f"[evaluator] RoBERTa model not found: {_ROBERTA_PATH}")
+        return False
+    try:
+        from transformers import AutoModel, AutoTokenizer
+        import torch
+        _ROBERTA_TOKENIZER = AutoTokenizer.from_pretrained(str(model_dir))
+        _ROBERTA_MODEL = AutoModel.from_pretrained(str(model_dir))
+        if torch.cuda.is_available():
+            _ROBERTA_MODEL = _ROBERTA_MODEL.cuda()
+        _ROBERTA_MODEL.eval()
+        return True
+    except Exception as e:
+        print(f"[evaluator] Failed to load RoBERTa: {e}")
+        return False
+
+
+def _encode_roberta(text: str):
+    import torch
+    if not _load_roberta():
+        return None
+    inputs = _ROBERTA_TOKENIZER(
+        text, return_tensors="pt", truncation=True, max_length=128,
+    )
+    device = next(_ROBERTA_MODEL.parameters()).device
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+    with torch.no_grad():
+        outputs = _ROBERTA_MODEL(**inputs)
+        # 取 [CLS] token 的 hidden state
+        cls = outputs.last_hidden_state[:, 0, :]
+        cls = cls / cls.norm(dim=1, keepdim=True)
+    return cls.cpu()
+
+
+def _compute_local_bert_sim(pred: str, ref: str) -> float:
+    """使用本地 RoBERTa 模型计算语义相似度。"""
+    pred_vec = _encode_roberta(pred)
+    ref_vec = _encode_roberta(ref)
+    if pred_vec is None or ref_vec is None:
+        return -1.0
+    sim = float((pred_vec * ref_vec).sum().item())
+    return round(max(0.0, min(1.0, sim)), 6)
+
+
+def _max_local_bert_sim(refs: list[str], hyp: str) -> float:
+    if not refs:
+        return -1.0
+    return max(_compute_local_bert_sim(hyp, ref) for ref in refs)
 
 
 _scorer = None
@@ -218,29 +274,6 @@ def _max_bleu(refs: list[str], hyp: str, ngram: int) -> float:
     return max(compute_bleu(ref, hyp, ngram=ngram) for ref in refs)
 
 
-# ── BERTScore ──
-def compute_bertscore(reference: str, hypothesis: str) -> float:
-    """基于 BERTScore 计算语义相似度 (F1)。返回 float，不可用时返回 -1。"""
-    if not _bertscore_available or _bertscorer is None:
-        return -1.0
-    try:
-        ref_norm = normalize_answer(reference)
-        hyp_norm = normalize_answer(hypothesis)
-        if not ref_norm or not hyp_norm:
-            return 0.0
-        P, R, F1 = _bertscorer.score([hyp_norm], [ref_norm])
-        return float(F1.item()) if hasattr(F1, "item") else float(F1[0])
-    except Exception as e:
-        print(f"BERTScore 异常: {e}")
-        return -1.0
-
-
-def _max_bertscore(refs: list[str], hyp: str) -> float:
-    if not _bertscore_available:
-        return -1.0
-    return max(compute_bertscore(ref, hyp) for ref in refs)
-
-
 # ── Recall@K ──
 def compute_recall_at_k(
     retrieved_docs: list[Any],
@@ -313,7 +346,7 @@ def evaluate_single_query(
         f1 = max(token_f1(model_answer, ans) for ans in gold_candidates)
         bleu1 = _max_bleu(gold_candidates, model_answer, ngram=1)
         bleu4 = _max_bleu(gold_candidates, model_answer, ngram=4)
-        bert_f1 = _max_bertscore(gold_candidates, model_answer)
+        bert_f1 = _max_local_bert_sim(gold_candidates, model_answer)
         best_answer_for_log = max(gold_candidates, key=lambda ans: token_f1(model_answer, ans))
 
         # NEW: 依据题型提示优先指标
