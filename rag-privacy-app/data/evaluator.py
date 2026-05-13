@@ -20,6 +20,15 @@ except ImportError:
     _nltk_available = False
     sentence_bleu = None  # type: ignore[assignment]
 
+# BERTScore（可选依赖，pip install bert-score）
+_bertscore_available = True
+try:
+    from bert_score import BERTScorer as _BERTScorer
+    _bertscorer = _BERTScorer(lang="en", model_type="microsoft/deberta-xlarge-mnli", device=None, verbose=False)
+except ImportError:
+    _bertscore_available = False
+    _bertscorer = None
+
 
 _scorer = None
 
@@ -209,6 +218,61 @@ def _max_bleu(refs: list[str], hyp: str, ngram: int) -> float:
     return max(compute_bleu(ref, hyp, ngram=ngram) for ref in refs)
 
 
+# ── BERTScore ──
+def compute_bertscore(reference: str, hypothesis: str) -> float:
+    """基于 BERTScore 计算语义相似度 (F1)。返回 float，不可用时返回 -1。"""
+    if not _bertscore_available or _bertscorer is None:
+        return -1.0
+    try:
+        ref_norm = normalize_answer(reference)
+        hyp_norm = normalize_answer(hypothesis)
+        if not ref_norm or not hyp_norm:
+            return 0.0
+        P, R, F1 = _bertscorer.score([hyp_norm], [ref_norm])
+        return float(F1.item()) if hasattr(F1, "item") else float(F1[0])
+    except Exception as e:
+        print(f"BERTScore 异常: {e}")
+        return -1.0
+
+
+def _max_bertscore(refs: list[str], hyp: str) -> float:
+    if not _bertscore_available:
+        return -1.0
+    return max(compute_bertscore(ref, hyp) for ref in refs)
+
+
+# ── Recall@K ──
+def compute_recall_at_k(
+    retrieved_docs: list[Any],
+    gold_answer: Any,
+    k_values: tuple[int, ...] = (1, 5, 10, 20),
+) -> dict[int, float]:
+    """计算多个 k 值下的召回率。返回 {k: recall}。"""
+    gold_answers = as_gold_answers(gold_answer)
+    if not gold_answers:
+        return {k: -1.0 for k in k_values}
+    gold_norms = [normalize_answer(a) for a in gold_answers if normalize_answer(a)]
+    if not gold_norms:
+        return {k: -1.0 for k in k_values}
+
+    results: dict[int, float] = {}
+    for k in k_values:
+        docs_slice = retrieved_docs[:k]
+        hit = False
+        for doc in docs_slice:
+            text = ""
+            if isinstance(doc, dict):
+                text = doc.get("content", "") or doc.get("text", "")
+            else:
+                text = getattr(doc, "text", "") or ""
+            doc_norm = normalize_answer(str(text))
+            if any(ans in doc_norm for ans in gold_norms):
+                hit = True
+                break
+        results[k] = 1.0 if hit else 0.0
+    return results
+
+
 def evaluate_single_query(
     question: str,
     gold_answer: Any,
@@ -249,6 +313,7 @@ def evaluate_single_query(
         f1 = max(token_f1(model_answer, ans) for ans in gold_candidates)
         bleu1 = _max_bleu(gold_candidates, model_answer, ngram=1)
         bleu4 = _max_bleu(gold_candidates, model_answer, ngram=4)
+        bert_f1 = _max_bertscore(gold_candidates, model_answer)
         best_answer_for_log = max(gold_candidates, key=lambda ans: token_f1(model_answer, ans))
 
         # NEW: 依据题型提示优先指标
@@ -263,6 +328,7 @@ def evaluate_single_query(
             gold_answer=gold_candidates,
             question=question,
         )
+        recall_at_k = compute_recall_at_k(retrieved_docs, gold_candidates)
 
         result = {
             # MOD: 输出中增加 gold_answer / model_answer，便于后续人工评估抽样
@@ -279,6 +345,11 @@ def evaluate_single_query(
             "token_f1": round(f1, 6),
             "bleu_1": round(bleu1, 6) if bleu1 >= 0 else -1,
             "bleu_4": round(bleu4, 6) if bleu4 >= 0 else -1,
+            "bertscore_f1": round(bert_f1, 6) if bert_f1 >= 0 else -1,
+            "recall_1": recall_at_k.get(1, -1),
+            "recall_5": recall_at_k.get(5, -1),
+            "recall_10": recall_at_k.get(10, -1),
+            "recall_20": recall_at_k.get(20, -1),
             "retrieval_precision": round(retrieval_precision, 6),
             # ── 隐私开销 ──
             "privacy_mode": getattr(getattr(nexus_system, "privacy_layer", None), "mode", "unknown"),

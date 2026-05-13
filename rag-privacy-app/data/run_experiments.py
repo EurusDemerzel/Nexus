@@ -62,7 +62,13 @@ def load_qa_questions(json_path: str, limit: int | None = None) -> list[dict]:
         if isinstance(answer, list):
             answer = " ".join(str(x) for x in answer if x is not None)
         elif isinstance(answer, dict):
-            answer = answer.get("text", "")
+            aliases = answer.get("aliases", [])
+            if isinstance(aliases, list) and aliases:
+                answer = str(aliases[0]).strip()
+            elif answer.get("text"):
+                answer = str(answer.get("text", "")).strip()
+            else:
+                answer = str(answer.get("value", "")).strip()
 
         supporting_facts = item.get("supporting_facts", [])
         if not isinstance(supporting_facts, list):
@@ -72,6 +78,11 @@ def load_qa_questions(json_path: str, limit: int | None = None) -> list[dict]:
         normalized_gold_answers: list[str] = []
         if isinstance(gold_answers, list):
             normalized_gold_answers = [str(x).strip() for x in gold_answers if str(x).strip()]
+        # 如果 gold_answers 为空但 answer 是包含 aliases 的字典，从中提取全部别名
+        if not normalized_gold_answers and isinstance(item.get("answer"), dict):
+            raw_aliases = item.get("answer", {}).get("aliases", [])
+            if isinstance(raw_aliases, list):
+                normalized_gold_answers = [str(x).strip() for x in raw_aliases if str(x).strip()]
 
         normalized.append(
             {
@@ -141,6 +152,11 @@ def main() -> None:
         "token_f1",
         "bleu_1",
         "bleu_4",
+        "bertscore_f1",
+        "recall_1",
+        "recall_5",
+        "recall_10",
+        "recall_20",
         "retrieval_precision",
         "privacy_mode",
         "privacy_overhead_ms",
