@@ -12,7 +12,7 @@ _CLIENT_MODE = os.getenv("LLM_CLIENT_MODE", "remote").strip().lower()
 _REMOTE_URL = os.getenv("LLM_URL", "http://100.106.140.63:8080/v1/chat/completions")
 
 # ---- GGUF 服务配置 (mode=gguf) ----
-_GGUF_URL = os.getenv("GGUF_URL", "http://localhost:8080/generate")
+_GGUF_URL = os.getenv("GGUF_URL", "http://localhost:8081/generate")
 
 
 def generate(prompt: str, max_tokens: int = 96) -> str:
