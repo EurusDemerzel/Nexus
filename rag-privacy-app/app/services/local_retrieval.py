@@ -157,7 +157,7 @@ def retrieve_from_faiss(query: str, top_k: int = 8) -> list[dict]:
 
     # ── 可选 Cross-Encoder Rerank ──
     if results and os.getenv("USE_RERANKER", "").strip() == "1":
-        rerank_k = int(os.getenv("RERANK_K", "4"))
+        rerank_k = int(os.getenv("RERANK_K", "5"))
         results, rerank_ms = _rerank_cross_encoder(query, results, top_k=rerank_k)
         if rerank_ms > 0:
             print(f"[local_retrieval.retrieve_from_faiss] reranked {len(results)} docs in {rerank_ms:.1f}ms")
