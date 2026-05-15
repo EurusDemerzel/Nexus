@@ -22,58 +22,61 @@ except ImportError:
     _nltk_available = False
     sentence_bleu = None  # type: ignore[assignment]
 
-# ── 本地 RoBERTa 语义相似度（完全离线）──
-_ROBERTA_MODEL = None
-_ROBERTA_TOKENIZER = None
-_ROBERTA_PATH = os.getenv(
-    "ROBERTA_MODEL_PATH",
-    str(Path(__file__).resolve().parents[1] / "models-roberta-large"),
+# ── 本地 BGE 语义相似度（完全离线，mean pooling + cosine）──
+_BGE_MODEL = None
+_BGE_TOKENIZER = None
+_BGE_PATH = os.getenv(
+    "BGE_MODEL_PATH",
+    str(Path(__file__).resolve().parents[1] / "models_for_server" / "bge-base-en-v1.5"),
 )
 
 
-def _load_roberta():
-    global _ROBERTA_MODEL, _ROBERTA_TOKENIZER
-    if _ROBERTA_MODEL is not None:
+def _load_bge():
+    global _BGE_MODEL, _BGE_TOKENIZER
+    if _BGE_MODEL is not None:
         return True
-    model_dir = Path(_ROBERTA_PATH)
+    model_dir = Path(_BGE_PATH)
     if not model_dir.is_dir():
-        print(f"[evaluator] RoBERTa model not found: {_ROBERTA_PATH}")
+        print(f"[evaluator] BGE model not found: {_BGE_PATH}")
         return False
     try:
         from transformers import AutoModel, AutoTokenizer
         import torch
-        _ROBERTA_TOKENIZER = AutoTokenizer.from_pretrained(str(model_dir))
-        _ROBERTA_MODEL = AutoModel.from_pretrained(str(model_dir))
+        _BGE_TOKENIZER = AutoTokenizer.from_pretrained(str(model_dir), local_files_only=True)
+        _BGE_MODEL = AutoModel.from_pretrained(str(model_dir), local_files_only=True)
         if torch.cuda.is_available():
-            _ROBERTA_MODEL = _ROBERTA_MODEL.cuda()
-        _ROBERTA_MODEL.eval()
+            _BGE_MODEL = _BGE_MODEL.cuda()
+        _BGE_MODEL.eval()
         return True
     except Exception as e:
-        print(f"[evaluator] Failed to load RoBERTa: {e}")
+        print(f"[evaluator] Failed to load BGE: {e}")
         return False
 
 
-def _encode_roberta(text: str):
+def _encode_bge(text: str):
+    """BGE mean pooling: average last_hidden_state, then L2 normalize."""
     import torch
-    if not _load_roberta():
+    if not _load_bge():
         return None
-    inputs = _ROBERTA_TOKENIZER(
-        text, return_tensors="pt", truncation=True, max_length=128,
+    inputs = _BGE_TOKENIZER(
+        text, return_tensors="pt", truncation=True, max_length=512, padding=True,
     )
-    device = next(_ROBERTA_MODEL.parameters()).device
+    device = next(_BGE_MODEL.parameters()).device
     inputs = {k: v.to(device) for k, v in inputs.items()}
     with torch.no_grad():
-        outputs = _ROBERTA_MODEL(**inputs)
-        # 取 [CLS] token 的 hidden state
-        cls = outputs.last_hidden_state[:, 0, :]
-        cls = cls / cls.norm(dim=1, keepdim=True)
-    return cls.cpu()
+        outputs = _BGE_MODEL(**inputs)
+        # mean pooling over token dim (BGE uses no CLS, average all tokens)
+        attention_mask = inputs["attention_mask"].unsqueeze(-1).float()
+        masked = outputs.last_hidden_state * attention_mask
+        pooled = masked.sum(dim=1) / attention_mask.sum(dim=1)
+        pooled = pooled / pooled.norm(dim=1, keepdim=True)
+    return pooled.cpu()
 
 
-def _compute_local_bert_sim(pred: str, ref: str) -> float:
-    """使用本地 RoBERTa 模型计算语义相似度。"""
-    pred_vec = _encode_roberta(pred)
-    ref_vec = _encode_roberta(ref)
+def compute_bge_similarity(pred: str, ref: str) -> float:
+    """使用本地 BGE 模型计算语义相似度 (0-1)。"""
+    pred_vec = _encode_bge(pred)
+    ref_vec = _encode_bge(ref)
     if pred_vec is None or ref_vec is None:
         return -1.0
     sim = float((pred_vec * ref_vec).sum().item())
@@ -81,9 +84,10 @@ def _compute_local_bert_sim(pred: str, ref: str) -> float:
 
 
 def _max_local_bert_sim(refs: list[str], hyp: str) -> float:
+    """多参考答案取最大 BGE 相似度（保持函数名兼容）。"""
     if not refs:
         return -1.0
-    return max(_compute_local_bert_sim(hyp, ref) for ref in refs)
+    return max(compute_bge_similarity(hyp, ref) for ref in refs)
 
 
 _scorer = None
