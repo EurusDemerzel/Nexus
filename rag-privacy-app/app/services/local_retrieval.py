@@ -70,10 +70,10 @@ DEFAULT_LOCAL_NOTES = [
 ROOT_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT_DIR / "data"
 NOTES_FILE = DATA_DIR / "local_notes_store.json"
-TRIVIAQA_KB_DIR = ROOT_DIR / "triviaqa_kb"
-TRIVIAQA_INDEX_FILE = TRIVIAQA_KB_DIR / "index.faiss"
-TRIVIAQA_DOCS_FILE = TRIVIAQA_KB_DIR / "documents.json"
-TRIVIAQA_META_FILE = TRIVIAQA_KB_DIR / "metadata.json"
+TRIVIAQA_KB_DIR = Path(os.getenv("FAISS_KB_DIR", str(ROOT_DIR / "triviaqa_kb")))
+TRIVIAQA_INDEX_FILE = Path(os.getenv("FAISS_INDEX_PATH", str(TRIVIAQA_KB_DIR / "index.faiss")))
+TRIVIAQA_DOCS_FILE = Path(os.getenv("FAISS_DOCUMENTS_PATH", str(TRIVIAQA_KB_DIR / "documents.json")))
+TRIVIAQA_META_FILE = Path(os.getenv("FAISS_METADATA_PATH", str(TRIVIAQA_KB_DIR / "metadata.json")))
 
 LOCAL_NOTES: list[dict] = []
 _NOTE_EMBEDDINGS = None
