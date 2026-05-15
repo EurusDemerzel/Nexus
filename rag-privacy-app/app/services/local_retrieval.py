@@ -22,7 +22,7 @@ from app.services.embedding_service import embed_text
 
 # ── Cross-encoder Reranker (可选，USE_RERANKER=1 启用) ──
 _RERANKER_MODEL = None
-_RERANKER_NAME = os.getenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+_RERANKER_NAME = os.getenv("RERANKER_MODEL", "./models_for_server/bge-base-en-v1.5")
 
 
 def _load_reranker():
@@ -36,7 +36,7 @@ def _load_reranker():
     except Exception:
         try:
             from sentence_transformers import CrossEncoder
-            _RERANKER_MODEL = CrossEncoder(_RERANKER_NAME)
+            _RERANKER_MODEL = CrossEncoder(_RERANKER_NAME, automodel_args={"local_files_only": True})
         except Exception as e:
             print(f"[local_retrieval.reranker] Failed to load: {e}")
     return _RERANKER_MODEL
