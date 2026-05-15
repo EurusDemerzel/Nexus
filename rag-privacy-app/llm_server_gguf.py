@@ -34,7 +34,7 @@ class Query(BaseModel):
 def generate(query: Query):
     output = llm(
         query.prompt,
-        max_tokens=5,          # 强制短答
+        max_tokens=20,          # 强制短答
         temperature=0.0,
         stop=["\n", ".", "?", "Context:", "You are"],  # 截断后续废话
         echo=False,
