@@ -34,9 +34,9 @@ class Query(BaseModel):
 def generate(query: Query):
     output = llm(
         query.prompt,
-        max_tokens=20,          # 强制短答
+        max_tokens=6,              # 极度限制，只能输出最短答案
         temperature=0.0,
-        stop=["\n", ".", "?", "Context:", "You are"],  # 截断后续废话
+        stop=["\n", ".", "?", "Context:", "Question:", "You are", "Note", "The", " was", " were"],
         echo=False,
     )
     response_text = output["choices"][0]["text"].strip()
