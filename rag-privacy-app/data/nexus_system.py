@@ -81,8 +81,8 @@ class NexusSystem:
     def _build_prompt(self, question: str, docs: list[RetrievedDoc]) -> str:
         # 固定后缀：Question + Answer 指令
         _SUFFIX = f"\n\nQuestion: {question}\n\nAnswer (ONLY the answer, one short sentence, no explanation):"
-        _MAX_PROMPT = 3000
-        _MAX_DOC_CHARS = 200
+        _MAX_PROMPT = 2500
+        _MAX_DOC_CHARS = 400
 
         # 先构建不带 context 的 prompt 模板，拿到后缀长度，剩余给文档
         suffix_len = len(_SUFFIX)
