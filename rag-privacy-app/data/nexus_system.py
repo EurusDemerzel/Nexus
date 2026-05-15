@@ -26,13 +26,13 @@ class RetrievedDoc:
 class NexusSystem:
     def __init__(
         self,
-        static_k: int = 8,
+        static_k: int = 15,
         dynamic_conf_threshold: float = 0.45,
         device_type: int = 2,
         privacy_mode: str | None = None,
         privacy_epsilon: float = 0.1,
     ):
-        # MOD: static-split 默认使用 top-8；可通过 NEXUS_STATIC_K 覆盖
+        # MOD: static-split 默认使用 top-15；可通过 NEXUS_STATIC_K 覆盖
         env_k = os.getenv("NEXUS_STATIC_K", "").strip()
         self.static_k = int(env_k) if env_k.isdigit() else static_k
         self.dynamic_conf_threshold = dynamic_conf_threshold
@@ -69,18 +69,18 @@ class NexusSystem:
     # MOD: 统一 Qwen Prompt 模板，static-split 与 nexus-dynamic 共用
     def _build_qwen_prompt(self, question: str, context_text: str) -> str:
         if not context_text or not context_text.strip():
-            return f"Question: {question}\n\nAnswer:"
+            return f"Question: {question}\n\nAnswer (ONLY the answer, no explanation, no context, one single phrase):"
 
         return (
             f"Context:\n{context_text}\n\n"
             f"Question: {question}\n\n"
-            f"Answer:"
+            f"Answer (ONLY the answer, no explanation, no context, one single phrase):"
         )
 
     # MOD: 统一 prompt 构建入口（文档截断 + 总长度限制）
     def _build_prompt(self, question: str, docs: list[RetrievedDoc]) -> str:
         # 固定后缀：Question + Answer 指令
-        _SUFFIX = f"\n\nQuestion: {question}\n\nAnswer:"
+        _SUFFIX = f"\n\nQuestion: {question}\n\nAnswer (ONLY the answer, no explanation, no context, one single phrase):"
         _MAX_PROMPT = 2500
         _MAX_DOC_CHARS = 400
 

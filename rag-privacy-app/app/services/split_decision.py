@@ -223,10 +223,10 @@ class SplitDecision:
         # ── 单阈值决策（可通过环境变量覆盖）──
         # NEXUS_THRESHOLD: 中/低分界，默认30
         # NEXUS_HIGH_K: 高负载 local_k，默认4
-        # NEXUS_LOW_K: 低负载 local_k，默认12
+        # NEXUS_LOW_K: 低负载 local_k，默认15
         _threshold = int(os.getenv("NEXUS_THRESHOLD", "25"))
         _high_k = int(os.getenv("NEXUS_HIGH_K", "6"))
-        _low_k = int(os.getenv("NEXUS_LOW_K", "10"))
+        _low_k = int(os.getenv("NEXUS_LOW_K", "15"))
 
         if score_s > _threshold:
             cfg = {"local_k": _high_k, "use_cloud": True}

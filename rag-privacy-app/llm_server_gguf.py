@@ -38,7 +38,7 @@ def generate(query: Query):
             {"role": "system", "content": "You are a concise assistant. Provide ONLY the direct answer. Do NOT add any explanation, context, or greetings."},
             {"role": "user", "content": query.prompt},
         ],
-        max_tokens=20,        # 足够生成短答案
+        max_tokens=10,        # 足够生成短答案
         temperature=0.0,
         stop=["\n", "?"],     # 安全截断
     )
