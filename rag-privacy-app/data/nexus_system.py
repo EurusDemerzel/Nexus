@@ -77,19 +77,50 @@ class NexusSystem:
             f"Answer (ONLY the answer, one short sentence, no explanation):"
         )
 
-    # MOD: 统一 prompt 构建入口
+    # MOD: 统一 prompt 构建入口（文档截断 + 总长度限制）
     def _build_prompt(self, question: str, docs: list[RetrievedDoc]) -> str:
-        blocks = []
-        for i, doc in enumerate(docs, start=1):
-            title = doc.metadata.get("title", "unknown")
-            blocks.append(f"[{i}] title={title} score={doc.score:.4f}\n{doc.text}")
+        # 固定后缀：Question + Answer 指令
+        _SUFFIX = f"\n\nQuestion: {question}\n\nAnswer (ONLY the answer, one short sentence, no explanation):"
+        _MAX_PROMPT = 3000
+        _MAX_DOC_CHARS = 200
 
-        context_text = "\n\n".join(blocks)
+        # 先构建不带 context 的 prompt 模板，拿到后缀长度，剩余给文档
+        suffix_len = len(_SUFFIX)
+        budget = _MAX_PROMPT - suffix_len - len("Context:\n\n")  # 留给文档块的总字符数
+        if budget <= 0:
+            budget = 500  # 极端兜底
+
+        blocks = []
+        used = 0
+        for i, doc in enumerate(docs, start=1):
+            title = doc.metadata.get("title", "unknown") if doc.metadata else "unknown"
+            # 截断文档正文
+            full_text = doc.text if doc.text else ""
+            if len(full_text) > _MAX_DOC_CHARS:
+                truncated = full_text[:_MAX_DOC_CHARS].rstrip() + "..."
+            else:
+                truncated = full_text
+
+            block = f"[{i}] title={title} score={doc.score:.4f}\n{truncated}"
+            # 不是最后一块时，预留 "\n\n" 分隔符
+            separator = "\n\n" if i < len(docs) else ""
+            needed = len(block) + len(separator)
+
+            if used + needed > budget:
+                # 超出总长度预算，截断文档列表
+                print(f"[NexusPrompt] budget exceeded: used={used} + needed={needed} > budget={budget}, stopping at doc {i - 1}/{len(docs)}")
+                break
+
+            blocks.append(block)
+            used += needed
+
+        context_text = "\n\n".join(blocks) if blocks else ""
         prompt = self._build_qwen_prompt(question, context_text)
 
-        # MOD: 调试日志，打印 prompt 前 200 字符
+        # 调试日志
+        actual_len = len(prompt)
         debug_preview = prompt.replace("\n", " ")[:200]
-        print(f"[NexusPrompt] preview={debug_preview}...")
+        print(f"[NexusPrompt] docs_used={len(blocks)}/{len(docs)} prompt_len={actual_len} preview={debug_preview}...")
         return prompt
 
     def _apply_privacy_to_docs(self, docs: list[RetrievedDoc]) -> list[RetrievedDoc]:
